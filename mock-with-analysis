@@ -1,0 +1,135 @@
+#! /usr/bin/env python
+#   Copyright 2012, 2013 David Malcolm <dmalcolm@redhat.com>
+#   Copyright 2012, 2013 Red Hat, Inc.
+#
+#   This is free software: you can redistribute it and/or modify it
+#   under the terms of the GNU General Public License as published by
+#   the Free Software Foundation, either version 3 of the License, or
+#   (at your option) any later version.
+#
+#   This program is distributed in the hope that it will be useful, but
+#   WITHOUT ANY WARRANTY; without even the implied warranty of
+#   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+#   General Public License for more details.
+#
+#   You should have received a copy of the GNU General Public License
+#   along with this program.  If not, see
+#   <http://www.gnu.org/licenses/>.
+
+import argparse
+import glob
+import os
+from subprocess import check_output, Popen, PIPE
+import sys
+
+class MockConfig:
+    def __init__(self, name):
+        self.name = name
+
+    def get_result_path(self):
+        return '/var/lib/mock/%s/result' % self.name
+
+    def get_chroot(self):
+        return '/var/lib/mock/%s/root' % self.name
+
+    def dump_log(self, logfile):
+        with open(os.path.join(self.get_result_path(), logfile)) as f:
+            sys.stdout.write(f.read())
+
+def local_rebuild_of_srpm_in_mock(mockcfg, srpmpath):
+    """
+    Rebuild the given SRPM locally within mock, injecting the cpychecker
+    code in RPM form; gathering the results to a subdir within "LOGS"
+    """
+    def run_mock(commands, captureOut=False, captureErr=False, failOnError=True):
+        cmds = ['mock', '-r', mockcfg.name, '--disable-plugin=ccache'] + commands
+        print('--------------------------------------------------------------')
+        print(' '.join(cmds))
+        print('--------------------------------------------------------------')
+        args = {}
+        if captureOut:
+            args['stdout'] = PIPE
+        if captureErr:
+            args['stderr'] = PIPE
+        p = Popen(cmds, **args)
+        out, err = p.communicate()
+        if p.returncode != 0 and failOnError:
+            msg = 'mock failed: return code %i' % p.returncode
+            if captureOut:
+                msg += 'stdout: %s' % out
+            if captureErr:
+                msg += 'stderr: %s' % err
+            raise RuntimeError(msg)
+        return out, err
+
+    # Experimenting with the script is much faster if we remove
+    # the --init here:
+    if 1:
+        run_mock(['--init'])
+    run_mock(['--installdeps', srpmpath])
+
+    # Install the static analyzers of interest:
+    run_mock(['--install', 'cppcheck'])
+    run_mock(['--install', 'clang-analyzer'])
+
+    if 0:
+        # Install the pre-built gcc-python-plugin:
+        run_mock(['install', PLUGIN_PATH]) # this doesn't work when cleaned: can't open state.log
+
+        # Copy up latest version of the libcpychecker code from this working copy
+        # overriding the copy from the pre-built plugin:
+        if 1:
+            HACKED_PATH='/usr/lib/gcc/x86_64-redhat-linux/4.6.3/plugin/python2'
+            # FIXME: ^^ this will need changing
+            for module in glob.glob('../../libcpychecker/*.py'):
+                run_mock(['--copyin', module, os.path.join(HACKED_PATH, 'libcpychecker')])
+            run_mock(['--copyin', '../../gccutils.py', HACKED_PATH])
+
+    # Override the real gcc/g++ with our fake ones, which add the necessary flags
+    # and then invokes the real one:
+    run_mock(['--chroot', 'mv /usr/bin/gcc /usr/bin/the-real-gcc'])
+    run_mock(['--chroot', 'mv /usr/bin/g++ /usr/bin/the-real-g++'])
+    run_mock(['--chroot', 'mv /usr/bin/c++ /usr/bin/the-real-c++'])
+    run_mock(['--copyin', 'fake-gcc.py', '/usr/bin/gcc'])
+    run_mock(['--copyin', 'fake-gcc.py', '/usr/bin/g++'])
+    run_mock(['--copyin', 'fake-gcc.py', '/usr/bin/c++'])
+
+    # Stuff needed by fake-gcc.py:
+    # FIXME: package these and get them into Fedora:
+    run_mock(['--install', '../firehose/dist/firehose-0.0.1-1.noarch.rpm'])
+    run_mock(['--install', '../gccinvocation/dist/gccinvocation-0.0.1-1.noarch.rpm'])
+
+    # Rebuild the src.rpm, using the script:
+    run_mock(['--rebuild', srpmpath,
+
+              '--no-clean',
+
+              ],
+             failOnError=False)
+
+    # For convenience, dump the logs from the chroot:
+    mockcfg.dump_log('root.log')
+    mockcfg.dump_log('build.log')
+
+    # TODO: Scrape out the XML files and postprocess them
+    builddir = os.path.join(mockcfg.get_chroot(), 'builddir')
+    for xmlpath in glob.glob(os.path.join(builddir, '*.xml')):
+        print(xmlpath)
+        # TODO: actually do something with these files
+
+def parse_args(argv):
+    parser = argparse.ArgumentParser(description='Invoke mock whilst injecting static analyzers.')
+    parser.add_argument('chroot', metavar='CHROOT', type=str,
+                        help='which mock chroot to use')
+    parser.add_argument('srpm', metavar='SRPM', type=str,
+                        help='which SRPM to rebuild')
+    args = parser.parse_args()
+    return args
+
+def main(argv):
+    args = parse_args(argv)
+    local_rebuild_of_srpm_in_mock(MockConfig(args.chroot),
+                                  args.srpm)
+
+if __name__ == '__main__':
+    main(sys.argv)
