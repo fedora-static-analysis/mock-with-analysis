@@ -13,6 +13,23 @@ The following analyzers are currently run:
 
 as well as gathering gcc warnings.
 
+The results are scraped out to the mock's results dir in a new
+"static-analysis" directory:
+
+::
+
+  /var/lib/mock/CONFIG/result/state.log
+                              root.log
+                              build.log
+                              BUILT-RPMS
+                              static-analysis/ <=== this and below are new
+                                             /reports/*.xml
+                                             /sources/
+
+where "static-analysis/reports/" contains the firehose XML files, and
+"static-analysis/sources/" contains all relevant source files, named after
+their SHA-1 digest.
+
 Currently under heavy development
 
 TODO:

@@ -1,6 +1,7 @@
 TEST_SRPM=python-ethtool-0.7-4.fc19.src.rpm
 
 run-mock-with-analysis: local_rpms
+	PYTHONPATH=../firehose \
 	./mock-with-analysis \
 	  fedora-17-x86_64 \
 	  $(TEST_SRPM)

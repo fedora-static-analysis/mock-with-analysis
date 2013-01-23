@@ -18,19 +18,27 @@
 
 import argparse
 import glob
+import hashlib
 import os
+import shutil
 from subprocess import check_output, Popen, PIPE
 import sys
+
+from firehose.report import Report, Sut, Hash, Visitor
 
 class MockConfig:
     def __init__(self, name):
         self.name = name
 
     def get_result_path(self):
-        return '/var/lib/mock/%s/result' % self.name
+        return '/var/lib/mock/%s/result/' % self.name
 
     def get_chroot(self):
-        return '/var/lib/mock/%s/root' % self.name
+        return '/var/lib/mock/%s/root/' % self.name
+
+    def get_path(self, internalabspath):
+        assert internalabspath.startswith('/')
+        return os.path.join(self.get_chroot(), internalabspath[1:])
 
     def dump_log(self, logfile):
         with open(os.path.join(self.get_result_path(), logfile)) as f:
@@ -111,11 +119,53 @@ def local_rebuild_of_srpm_in_mock(mockcfg, srpmpath):
     mockcfg.dump_log('root.log')
     mockcfg.dump_log('build.log')
 
-    # TODO: Scrape out the XML files and postprocess them
+
+def extract_results_from_chroot(mockcfg, srpm):
+    # Scrape out the XML files (and sources) and postprocess them
+    resultdir = mockcfg.get_result_path()
+    def mkdir(path):
+        if not os.path.exists(path):
+            os.mkdir(path)
+    dstdir = os.path.join(resultdir, 'static-analysis')
+    mkdir(dstdir)
+    reportsdir = os.path.join(dstdir, 'reports')
+    mkdir(reportsdir)
+    sourcesdir = os.path.join(dstdir, 'sources')
+    mkdir(sourcesdir)
+
     builddir = os.path.join(mockcfg.get_chroot(), 'builddir')
     for xmlpath in glob.glob(os.path.join(builddir, '*.xml')):
         print(xmlpath)
-        # TODO: actually do something with these files
+
+        # Copy out all relevant sources from buildroot, hashing as we go:
+        class SourceExtractor(Visitor):
+            def visit_file(self, file_):
+                print(file_)
+                # Convert the abspath (which is relative to the top of
+                # the chroot) to the full path as we see it:
+                # e.g. from '/builddir/build/BUILD/python-ethtool-0.7/python-ethtool/ethtool.c')
+                # to '/var/lib/mock/fedora-17-x86_64/root/builddir/build/BUILD/python-ethtool-0.7/python-ethtool/ethtool.c'
+                srcpath = mockcfg.get_path(file_.abspath)
+                with open(srcpath) as f:
+                    # FIXME: harcdoded hash
+                    hexdigest = hashlib.sha1(f.read()).hexdigest()
+                dstpath = os.path.join(sourcesdir, hexdigest)
+                shutil.copy(srcpath, dstpath)
+                file_.hash_ = Hash(alg='sha1', hexdigest=hexdigest)
+
+        with open(xmlpath) as f:
+            r = Report.from_xml(f)
+        r.accept(SourceExtractor())
+
+        # TODO: update SUT information
+        r.metadata.sut = Sut(srpm)
+
+        # Write postprocessed report to mock's "static-analysis/reports" dir:
+        xmlstr = r.to_xml_str()
+        hexdigest = hashlib.sha1(xmlstr).hexdigest()
+        filename = os.path.join(reportsdir, '%s.xml' % hexdigest)
+        with open(filename, 'w') as f:
+            f.write(xmlstr)
 
 def parse_args(argv):
     parser = argparse.ArgumentParser(description='Invoke mock whilst injecting static analyzers.')
@@ -128,8 +178,11 @@ def parse_args(argv):
 
 def main(argv):
     args = parse_args(argv)
-    local_rebuild_of_srpm_in_mock(MockConfig(args.chroot),
+    mockcfg = MockConfig(args.chroot)
+    local_rebuild_of_srpm_in_mock(mockcfg,
                                   args.srpm)
+    extract_results_from_chroot(mockcfg,
+                                args.srpm)
 
 if __name__ == '__main__':
     main(sys.argv)
