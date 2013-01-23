@@ -22,6 +22,7 @@
 # This code assumes that it is /usr/bin/gcc and that the real GCC has been
 # moved to /usr/bin/the-real-gcc
 
+import glob
 import hashlib
 import os
 import StringIO
@@ -76,8 +77,29 @@ def invoke_cppchecker(gccinv):
                         write_report_as_xml(report)
 
 def invoke_clang_analyzer(gccinv):
+    from firehose.parsers.clanganalyzer import parse_plist
+
     print('invoke_clang_analyzer for %s' % gccinv)
-    # TODO
+
+    for sourcefile in gccinv.sources:
+        if sourcefile.endswith('.c'): # FIXME: other extensions?
+            resultdir = tempfile.mkdtemp()
+            args = ['scan-build', '-v', '-plist',
+                    '-o', resultdir,
+                    get_real_executable(gccinv.argv)] + gccinv.argv[1:]
+            print(args)
+            p = Popen(args)
+            out, err = p.communicate()
+
+            # Given e.g. resultdir='/tmp/tmpQW2l2B', the plist files
+            # are an extra level deep e.g.:
+            #  '/tmp/tmpQW2l2B/2013-01-22-1/report-MlwJri.plist'
+            for plistpath in glob.glob(os.path.join(resultdir,
+                                                    '*/*.plist')):
+                for report in parse_plist(plistpath,
+                                          analyzerversion=None,
+                                          sut=None):
+                    write_report_as_xml(report)
 
 def invoke_side_effects(argv):
     print("I would be invoking side effects for the command: %s"
@@ -96,12 +118,13 @@ def parse_gcc_stderr(stderr):
     for report in parse_file(f, gccversion=None, sut=None):
         write_report_as_xml(report)
 
-def invoke_real_executable(argv):
+def get_real_executable(argv):
     apparentcmd = argv[0]
     dir_, basename = os.path.split(apparentcmd)
-    args = [os.path.join(dir_,
-                         'the-real-%s' % basename)]
-    args += argv[1:]
+    return os.path.join(dir_, 'the-real-%s' % basename)
+
+def invoke_real_executable(argv):
+    args = [get_real_executable(argv)] + argv[1:]
     if 0:
         print(' '.join(args))
     p = Popen(args, stderr=PIPE)
