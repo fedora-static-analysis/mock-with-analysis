@@ -29,18 +29,19 @@ import StringIO
 from subprocess import Popen, PIPE, STDOUT
 import sys
 import tempfile
+import time
 
 from gccinvocation import GccInvocation
 
 def log(msg):
     sys.stdout.write('FAKE-GCC: %s\n' % msg)
 
-def write_report_as_xml(report):
+def write_analysis_as_xml(analysis):
     # Ensure we have absolute paths (within the chroot) and SHA-1 hashes
     # of all files referred to in the report:
-    report.fixup_files(os.getcwd(), 'sha1')
+    analysis.fixup_files(os.getcwd(), 'sha1')
 
-    xmlstr = report.to_xml_str()
+    xmlstr = analysis.to_xml_str()
 
     # Dump the XML to stdout, so it's visible in the logs:
     sys.stdout.write(xmlstr)
@@ -52,6 +53,36 @@ def write_report_as_xml(report):
     with open(filename, 'w') as f:
         f.write(xmlstr)
 
+def make_file(givenpath):
+    from firehose.report import File
+    return File(givenpath=givenpath,
+                abspath=None,
+                hash_=None)
+
+def make_stats(timer):
+    from firehose.report import Stats
+    return Stats(wallclocktime=timer.get_elapsed_time())
+
+class Timer:
+    """
+    Simple measurement of wallclock time taken
+    """
+    def __init__(self):
+        self.starttime = time.time()
+
+    def get_elapsed_time(self):
+        """Get elapsed time in seconds as a float"""
+        curtime = time.time()
+        return curtime - self.starttime
+
+    def elapsed_time_as_str(self):
+        """Get elapsed time as a string (with units)"""
+        elapsed = self.get_elapsed_time()
+        result = '%0.3f seconds' % elapsed
+        if elapsed > 120:
+            result += ' (%i minutes)' % int(elapsed / 60)
+        return result
+
 def invoke_cppchecker(gccinv):
     from firehose.parsers.cppcheck import parse_file
 
@@ -60,6 +91,7 @@ def invoke_cppchecker(gccinv):
     for sourcefile in gccinv.sources:
         if sourcefile.endswith('.c'): # FIXME: other extensions?
             # Invoke cppcheck, capturing output in its XML format
+            t = Timer()
             p = Popen(['cppcheck',
                        '--xml', '--xml-version=2',
                        sourcefile],
@@ -76,8 +108,10 @@ def invoke_cppchecker(gccinv):
 
                 with open(outfile.name) as infile:
                     # Parse stderr into firehose XML format and save:
-                    for report in parse_file(infile, sut=None):
-                        write_report_as_xml(report)
+                    analysis = parse_file(infile,
+                                          file_=make_file(sourcefile),
+                                          stats=make_stats(t))
+                    write_analysis_as_xml(analysis)
 
 def invoke_clang_analyzer(gccinv):
     from firehose.parsers.clanganalyzer import parse_plist
@@ -86,6 +120,7 @@ def invoke_clang_analyzer(gccinv):
 
     for sourcefile in gccinv.sources:
         if sourcefile.endswith('.c'): # FIXME: other extensions?
+            t = Timer()
             resultdir = tempfile.mkdtemp()
             args = ['scan-build', '-v', '-plist',
                     '-o', resultdir,
@@ -99,10 +134,10 @@ def invoke_clang_analyzer(gccinv):
             #  '/tmp/tmpQW2l2B/2013-01-22-1/report-MlwJri.plist'
             for plistpath in glob.glob(os.path.join(resultdir,
                                                     '*/*.plist')):
-                for report in parse_plist(plistpath,
-                                          analyzerversion=None,
-                                          sut=None):
-                    write_report_as_xml(report)
+                analysis = parse_plist(plistpath,
+                                       file_=make_file(sourcefile),
+                                       stats=make_stats(t))
+                write_analysis_as_xml(analysis)
 
 def invoke_side_effects(argv):
     log("invoke_side_effects: %s"
@@ -112,14 +147,14 @@ def invoke_side_effects(argv):
     invoke_cppchecker(gccinv)
     invoke_clang_analyzer(gccinv)
 
-def parse_gcc_stderr(stderr):
+def parse_gcc_stderr(stderr, stats):
     from firehose.parsers.gcc import parse_file
 
     log('parse_gcc_stderr(%r)' % stderr)
 
     f = StringIO.StringIO(stderr)
-    for report in parse_file(f, gccversion=None, sut=None):
-        write_report_as_xml(report)
+    analysis = parse_file(f, stats=stats)
+    write_analysis_as_xml(analysis)
 
 def get_real_executable(argv):
     apparentcmd = argv[0]
@@ -132,9 +167,11 @@ def invoke_real_executable(argv):
         log(' '.join(args))
     p = Popen(args, stderr=PIPE)
     try:
+        t = Timer()
         out, err = p.communicate()
         sys.stderr.write(err)
-        parse_gcc_stderr(err)
+        parse_gcc_stderr(err,
+                         stats=make_stats(t))
     except KeyboardInterrupt:
         pass
     return p.returncode

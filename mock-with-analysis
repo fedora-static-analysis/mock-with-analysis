@@ -24,7 +24,7 @@ import shutil
 from subprocess import check_output, Popen, PIPE
 import sys
 
-from firehose.report import Report, Sut, Hash, Visitor
+from firehose.report import Analysis, Issue, Sut, Hash, Visitor
 
 class MockConfig:
     def __init__(self, name):
@@ -154,14 +154,14 @@ def extract_results_from_chroot(mockcfg, srpm):
                 file_.hash_ = Hash(alg='sha1', hexdigest=hexdigest)
 
         with open(xmlpath) as f:
-            r = Report.from_xml(f)
-        r.accept(SourceExtractor())
+            a = Analysis.from_xml(f)
+        a.accept(SourceExtractor())
 
         # TODO: update SUT information
-        r.metadata.sut = Sut(srpm)
+        a.metadata.sut = Sut(srpm)
 
         # Write postprocessed report to mock's "static-analysis/reports" dir:
-        xmlstr = r.to_xml_str()
+        xmlstr = a.to_xml_str()
         hexdigest = hashlib.sha1(xmlstr).hexdigest()
         filename = os.path.join(reportsdir, '%s.xml' % hexdigest)
         with open(filename, 'w') as f:
