@@ -32,6 +32,9 @@ import tempfile
 
 from gccinvocation import GccInvocation
 
+def log(msg):
+    sys.stdout.write('FAKE-GCC: %s\n' % msg)
+
 def write_report_as_xml(report):
     # Ensure we have absolute paths (within the chroot) and SHA-1 hashes
     # of all files referred to in the report:
@@ -52,7 +55,7 @@ def write_report_as_xml(report):
 def invoke_cppchecker(gccinv):
     from firehose.parsers.cppcheck import parse_file
 
-    print('invoke_cppchecker for %s' % gccinv)
+    log('invoke_cppchecker for %s' % gccinv)
 
     for sourcefile in gccinv.sources:
         if sourcefile.endswith('.c'): # FIXME: other extensions?
@@ -79,7 +82,7 @@ def invoke_cppchecker(gccinv):
 def invoke_clang_analyzer(gccinv):
     from firehose.parsers.clanganalyzer import parse_plist
 
-    print('invoke_clang_analyzer for %s' % gccinv)
+    log('invoke_clang_analyzer for %s' % gccinv)
 
     for sourcefile in gccinv.sources:
         if sourcefile.endswith('.c'): # FIXME: other extensions?
@@ -87,7 +90,7 @@ def invoke_clang_analyzer(gccinv):
             args = ['scan-build', '-v', '-plist',
                     '-o', resultdir,
                     get_real_executable(gccinv.argv)] + gccinv.argv[1:]
-            print(args)
+            log(args)
             p = Popen(args)
             out, err = p.communicate()
 
@@ -102,8 +105,8 @@ def invoke_clang_analyzer(gccinv):
                     write_report_as_xml(report)
 
 def invoke_side_effects(argv):
-    print("I would be invoking side effects for the command: %s"
-          % ' '.join(sys.argv))
+    log("invoke_side_effects: %s"
+        % ' '.join(sys.argv))
 
     gccinv = GccInvocation(argv)
     invoke_cppchecker(gccinv)
@@ -112,7 +115,7 @@ def invoke_side_effects(argv):
 def parse_gcc_stderr(stderr):
     from firehose.parsers.gcc import parse_file
 
-    print('parse_gcc_stderr(%r)' % stderr)
+    log('parse_gcc_stderr(%r)' % stderr)
 
     f = StringIO.StringIO(stderr)
     for report in parse_file(f, gccversion=None, sut=None):
@@ -126,7 +129,7 @@ def get_real_executable(argv):
 def invoke_real_executable(argv):
     args = [get_real_executable(argv)] + argv[1:]
     if 0:
-        print(' '.join(args))
+        log(' '.join(args))
     p = Popen(args, stderr=PIPE)
     try:
         out, err = p.communicate()
