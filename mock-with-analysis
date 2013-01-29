@@ -68,39 +68,44 @@ class MockConfig:
         return out, err
 
 def setup_chroot(mockcfg, srpmpath):
-    # Experimenting with the script is much faster if we remove
-    # the --init here:
+    # The following things take a relatively long time
+    # If you're just hacking on fake-gcc.py, turn this block off
     if 1:
-        mockcfg.cmd(['--init'])
-    mockcfg.cmd(['--installdeps', srpmpath])
+        # Experimenting with the script is much faster if we remove
+        # the --init here:
+        if 1:
+            mockcfg.cmd(['--init'])
+        mockcfg.cmd(['--installdeps', srpmpath])
 
-    # Install the static analyzers of interest:
-    mockcfg.cmd(['--install', 'cppcheck'])
-    mockcfg.cmd(['--install', 'clang-analyzer'])
+        # Install the static analyzers of interest:
+        mockcfg.cmd(['--install', 'cppcheck'])
+        mockcfg.cmd(['--install', 'clang-analyzer'])
 
-    # Install the pre-built gcc-python-plugin (from the firehose branch):
-    mockcfg.cmd(['--install',
-                  '/home/david/rpmbuild/RPMS/x86_64/gcc-python2-plugin-0.11.firehose-1.fc17.x86_64.rpm'])
+        # Install the pre-built gcc-python-plugin (from the firehose branch):
+        mockcfg.cmd(['--install',
+                      '/home/david/rpmbuild/RPMS/x86_64/gcc-python2-plugin-0.11.firehose-1.fc17.x86_64.rpm'])
 
-    # Copy up latest version of the libcpychecker code from a working copy
-    # overriding the copy from the pre-built plugin:
-    if 0:
-        HACKED_PATH='/usr/lib/gcc/x86_64-redhat-linux/4.7.2/plugin/python2'
-        # FIXME: ^^ this will need changing
-        for module in glob.glob('../../libcpychecker/*.py'):
-            mockcfg.cmd(['--copyin', module, os.path.join(HACKED_PATH, 'libcpychecker')])
-            mockcfg.cmd(['--copyin', '../../gccutils.py', HACKED_PATH])
+        # Copy up latest version of the libcpychecker code from a working copy
+        # overriding the copy from the pre-built plugin:
+        if 0:
+            HACKED_PATH='/usr/lib/gcc/x86_64-redhat-linux/4.7.2/plugin/python2'
+            # FIXME: ^^ this will need changing
+            for module in glob.glob('../../libcpychecker/*.py'):
+                mockcfg.cmd(['--copyin', module, os.path.join(HACKED_PATH, 'libcpychecker')])
+                mockcfg.cmd(['--copyin', '../../gccutils.py', HACKED_PATH])
 
-    # Stuff needed by fake-gcc.py:
-    # FIXME: package these and get them into Fedora:
-    mockcfg.cmd(['--install', '../firehose/dist/firehose-0.0.1-1.noarch.rpm'])
-    mockcfg.cmd(['--install', '../gccinvocation/dist/gccinvocation-0.0.1-1.noarch.rpm'])
+        # Stuff needed by fake-gcc.py:
+        # FIXME: package these and get them into Fedora:
+        mockcfg.cmd(['--install', '../firehose/dist/firehose-0.0.1-1.noarch.rpm'])
+        mockcfg.cmd(['--install', '../gccinvocation/dist/gccinvocation-0.0.1-1.noarch.rpm'])
 
-    # Override the real gcc/g++ with our fake ones, which add the necessary flags
-    # and then invokes the real one:
-    mockcfg.cmd(['--chroot', 'mv /usr/bin/gcc /usr/bin/the-real-gcc'])
-    mockcfg.cmd(['--chroot', 'mv /usr/bin/g++ /usr/bin/the-real-g++'])
-    mockcfg.cmd(['--chroot', 'mv /usr/bin/c++ /usr/bin/the-real-c++'])
+        # Override the real gcc/g++ with our fake ones, which add the necessary flags
+        # and then invokes the real one:
+        mockcfg.cmd(['--chroot', 'mv /usr/bin/gcc /usr/bin/the-real-gcc'])
+        mockcfg.cmd(['--chroot', 'mv /usr/bin/g++ /usr/bin/the-real-g++'])
+        mockcfg.cmd(['--chroot', 'mv /usr/bin/c++ /usr/bin/the-real-c++'])
+    else:
+        shutil.rmtree(os.path.join(mockcfg.get_result_path(), 'static-analysis'))
 
     mockcfg.cmd(['--copyin', 'fake-gcc.py', '/usr/bin/gcc'])
     mockcfg.cmd(['--copyin', 'fake-gcc.py', '/usr/bin/g++'])
