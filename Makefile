@@ -14,7 +14,7 @@ run-mock-without-analysis:
 # Currently mock-with-analysis assumes you have rebuilt rpms
 # of the newer dependencies (which are under heavy development)
 # These should be checked out in sister directories:
-local_rpms: firehose_rpm gccinvocation_rpm
+local_rpms: firehose_rpm gccinvocation_rpm # gcc-python-plugin_rpm
 
 # https://github.com/fedora-static-analysis/firehose
 firehose_rpm:
@@ -23,3 +23,12 @@ firehose_rpm:
 # https://github.com/fedora-static-analysis/gccinvocation
 gccinvocation_rpm:
 	cd ../gccinvocation && make unittests && python setup.py bdist_rpm
+
+# need the firehose branch:
+# http://git.fedorahosted.org/cgit/gcc-python-plugin.git/log/?h=firehose
+gcc-python-plugin_rpm:
+	cd ../gcc-python/cpychecker-firehose-output && make VERSION=0.11.firehose tarball rpm
+
+html:
+	PYTHONPATH=../firehose \
+	python ./make-report.py

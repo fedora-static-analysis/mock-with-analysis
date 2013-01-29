@@ -139,6 +139,50 @@ def invoke_clang_analyzer(gccinv):
                                        stats=make_stats(t))
                 write_analysis_as_xml(analysis)
 
+def invoke_cpychecker(gccinv):
+    from firehose.report import Analysis
+
+    log('invoke_cpychecker for %s' % gccinv)
+    for sourcefile in gccinv.sources:
+        if sourcefile.endswith('.c'): # FIXME: other extensions?
+            # invoke the plugin, but for robustness, do it in an entirely separate gcc invocation
+            # strip away -o; add -S or -c?
+            # or set -o to a dummy location?
+            # latter seems more robust
+            #gccinv = gccinv.restrict_source(sourcefile)
+
+            assert len(gccinv.sources) == 1 # for now
+
+            argv = gccinv.argv[:]
+
+            outputxmlpath = '%s.firehose.xml' % sourcefile
+
+            # We would use the regular keyword argument syntax:
+            #   outputxmlpath='foo'
+            # but unfortunately gcc's option parser seems to not be able to cope with '='
+            # within an option's value.  So we do it using dictionary syntax instead:
+            pycmd = ('from libcpychecker import main, Options; '
+                     'main(Options(**{"outputxmlpath":"%s"}))' % outputxmlpath)
+            argv += ['-fplugin=python2',
+                     '-fplugin-arg-python2-command=%s' % pycmd]
+
+            args = [get_real_executable(argv)] + argv[1:]
+            if 1:
+                log(' '.join(args))
+            p = Popen(args, stderr=PIPE)
+            try:
+                t = Timer()
+                out, err = p.communicate()
+                sys.stderr.write(err)
+            except KeyboardInterrupt:
+                pass
+
+            with open(outputxmlpath) as f:
+                analysis = Analysis.from_xml(f)
+            analysis.metadata.file_ = make_file(sourcefile)
+            analysis.metadata.stats = make_stats(t)
+            write_analysis_as_xml(analysis)
+
 def invoke_side_effects(argv):
     log("invoke_side_effects: %s"
         % ' '.join(sys.argv))
@@ -146,6 +190,7 @@ def invoke_side_effects(argv):
     gccinv = GccInvocation(argv)
     invoke_cppchecker(gccinv)
     invoke_clang_analyzer(gccinv)
+    invoke_cpychecker(gccinv)
 
 def parse_gcc_stderr(stderr, stats):
     from firehose.parsers.gcc import parse_file

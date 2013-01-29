@@ -20,11 +20,12 @@ import argparse
 import glob
 import hashlib
 import os
+import re
 import shutil
 from subprocess import check_output, Popen, PIPE
 import sys
 
-from firehose.report import Analysis, Issue, Sut, Hash, Visitor
+from firehose.report import Analysis, Issue, SourceRpm, Hash, Visitor
 
 class MockConfig:
     def __init__(self, name):
@@ -44,13 +45,9 @@ class MockConfig:
         with open(os.path.join(self.get_result_path(), logfile)) as f:
             sys.stdout.write(f.read())
 
-def local_rebuild_of_srpm_in_mock(mockcfg, srpmpath):
-    """
-    Rebuild the given SRPM locally within mock, injecting the cpychecker
-    code in RPM form; gathering the results to a subdir within "LOGS"
-    """
-    def run_mock(commands, captureOut=False, captureErr=False, failOnError=True):
-        cmds = ['mock', '-r', mockcfg.name, '--disable-plugin=ccache'] + commands
+    def cmd(self, commands,
+            captureOut=False, captureErr=False, failOnError=True):
+        cmds = ['mock', '-r', self.name, '--disable-plugin=ccache'] + commands
         print('--------------------------------------------------------------')
         print(' '.join(cmds))
         print('--------------------------------------------------------------')
@@ -70,45 +67,49 @@ def local_rebuild_of_srpm_in_mock(mockcfg, srpmpath):
             raise RuntimeError(msg)
         return out, err
 
+def setup_chroot(mockcfg, srpmpath):
     # Experimenting with the script is much faster if we remove
     # the --init here:
     if 1:
-        run_mock(['--init'])
-    run_mock(['--installdeps', srpmpath])
+        mockcfg.cmd(['--init'])
+    mockcfg.cmd(['--installdeps', srpmpath])
 
     # Install the static analyzers of interest:
-    run_mock(['--install', 'cppcheck'])
-    run_mock(['--install', 'clang-analyzer'])
+    mockcfg.cmd(['--install', 'cppcheck'])
+    mockcfg.cmd(['--install', 'clang-analyzer'])
 
+    # Install the pre-built gcc-python-plugin (from the firehose branch):
+    mockcfg.cmd(['--install',
+                  '/home/david/rpmbuild/RPMS/x86_64/gcc-python2-plugin-0.11.firehose-1.fc17.x86_64.rpm'])
+
+    # Copy up latest version of the libcpychecker code from a working copy
+    # overriding the copy from the pre-built plugin:
     if 0:
-        # Install the pre-built gcc-python-plugin:
-        run_mock(['install', PLUGIN_PATH]) # this doesn't work when cleaned: can't open state.log
-
-        # Copy up latest version of the libcpychecker code from this working copy
-        # overriding the copy from the pre-built plugin:
-        if 1:
-            HACKED_PATH='/usr/lib/gcc/x86_64-redhat-linux/4.6.3/plugin/python2'
-            # FIXME: ^^ this will need changing
-            for module in glob.glob('../../libcpychecker/*.py'):
-                run_mock(['--copyin', module, os.path.join(HACKED_PATH, 'libcpychecker')])
-            run_mock(['--copyin', '../../gccutils.py', HACKED_PATH])
-
-    # Override the real gcc/g++ with our fake ones, which add the necessary flags
-    # and then invokes the real one:
-    run_mock(['--chroot', 'mv /usr/bin/gcc /usr/bin/the-real-gcc'])
-    run_mock(['--chroot', 'mv /usr/bin/g++ /usr/bin/the-real-g++'])
-    run_mock(['--chroot', 'mv /usr/bin/c++ /usr/bin/the-real-c++'])
-    run_mock(['--copyin', 'fake-gcc.py', '/usr/bin/gcc'])
-    run_mock(['--copyin', 'fake-gcc.py', '/usr/bin/g++'])
-    run_mock(['--copyin', 'fake-gcc.py', '/usr/bin/c++'])
+        HACKED_PATH='/usr/lib/gcc/x86_64-redhat-linux/4.7.2/plugin/python2'
+        # FIXME: ^^ this will need changing
+        for module in glob.glob('../../libcpychecker/*.py'):
+            mockcfg.cmd(['--copyin', module, os.path.join(HACKED_PATH, 'libcpychecker')])
+            mockcfg.cmd(['--copyin', '../../gccutils.py', HACKED_PATH])
 
     # Stuff needed by fake-gcc.py:
     # FIXME: package these and get them into Fedora:
-    run_mock(['--install', '../firehose/dist/firehose-0.0.1-1.noarch.rpm'])
-    run_mock(['--install', '../gccinvocation/dist/gccinvocation-0.0.1-1.noarch.rpm'])
+    mockcfg.cmd(['--install', '../firehose/dist/firehose-0.0.1-1.noarch.rpm'])
+    mockcfg.cmd(['--install', '../gccinvocation/dist/gccinvocation-0.0.1-1.noarch.rpm'])
 
-    # Rebuild the src.rpm, using the script:
-    run_mock(['--rebuild', srpmpath,
+    # Override the real gcc/g++ with our fake ones, which add the necessary flags
+    # and then invokes the real one:
+    mockcfg.cmd(['--chroot', 'mv /usr/bin/gcc /usr/bin/the-real-gcc'])
+    mockcfg.cmd(['--chroot', 'mv /usr/bin/g++ /usr/bin/the-real-g++'])
+    mockcfg.cmd(['--chroot', 'mv /usr/bin/c++ /usr/bin/the-real-c++'])
+
+    mockcfg.cmd(['--copyin', 'fake-gcc.py', '/usr/bin/gcc'])
+    mockcfg.cmd(['--copyin', 'fake-gcc.py', '/usr/bin/g++'])
+    mockcfg.cmd(['--copyin', 'fake-gcc.py', '/usr/bin/c++'])
+
+
+def rebuild_srpm(mockcfg, srpmpath):
+    # Rebuild the src.rpm, using the hacked-up gcc:
+    mockcfg.cmd(['--rebuild', srpmpath,
 
               '--no-clean',
 
@@ -116,11 +117,11 @@ def local_rebuild_of_srpm_in_mock(mockcfg, srpmpath):
              failOnError=False)
 
     # For convenience, dump the logs from the chroot:
-    mockcfg.dump_log('root.log')
+    #mockcfg.dump_log('root.log')
     mockcfg.dump_log('build.log')
 
 
-def extract_results_from_chroot(mockcfg, srpm):
+def extract_results_from_chroot(mockcfg, srpm, buildarch):
     # Scrape out the XML files (and sources) and postprocess them
     resultdir = mockcfg.get_result_path()
     def mkdir(path):
@@ -157,8 +158,14 @@ def extract_results_from_chroot(mockcfg, srpm):
             a = Analysis.from_xml(f)
         a.accept(SourceExtractor())
 
-        # TODO: update SUT information
-        a.metadata.sut = Sut(srpm)
+        # Update SUT information:
+        basename = os.path.basename(srpm)
+        m = re.match('(.+)-(.+)-(.+)', basename)
+        name, version, release = m.groups()
+        a.metadata.sut = SourceRpm(name=name,
+                                   version=version,
+                                   release=release,
+                                   buildarch=buildarch)
 
         # Write postprocessed report to mock's "static-analysis/reports" dir:
         xmlstr = a.to_xml_str()
@@ -179,10 +186,11 @@ def parse_args(argv):
 def main(argv):
     args = parse_args(argv)
     mockcfg = MockConfig(args.chroot)
-    local_rebuild_of_srpm_in_mock(mockcfg,
-                                  args.srpm)
+    setup_chroot(mockcfg, args.srpm)
+    rebuild_srpm(mockcfg, args.srpm)
     extract_results_from_chroot(mockcfg,
-                                args.srpm)
+                                args.srpm,
+                                buildarch='x86_64') # FIXME
 
 if __name__ == '__main__':
     main(sys.argv)
