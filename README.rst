@@ -10,6 +10,7 @@ The following analyzers are currently run:
 
   * `cppcheck <http://cppcheck.sourceforge.net/>`_
   * `clang static analyzer <http://clang-analyzer.llvm.org/>`_
+  * `cpychecker <https://gcc-python-plugin.readthedocs.org/en/latest/cpychecker.html>`_
 
 as well as gathering gcc warnings.
 
@@ -33,6 +34,14 @@ their SHA-1 digest.
 Currently under heavy development
 
 TODO:
-  * add `cpychecker <https://gcc-python-plugin.readthedocs.org/en/latest/cpychecker.html>`_
   * add other analyzers (which?)
+  * make more robust
+
+    * capture analysis failures in the XML
+
+      * gcc warnings that we can't parse
+      * crashes of an analysis tool
+
+    * add timeouts: if a checker takes too long, kill it (and capture it
+      within in the XML)
 
