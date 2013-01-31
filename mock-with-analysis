@@ -42,6 +42,9 @@ class MockConfig:
         return os.path.join(self.get_chroot(), internalabspath[1:])
 
     def dump_log(self, logfile):
+        print('--------------------------------------------------------------')
+        print(logfile)
+        print('--------------------------------------------------------------')
         with open(os.path.join(self.get_result_path(), logfile)) as f:
             sys.stdout.write(f.read())
 

@@ -44,7 +44,7 @@ def write_analysis_as_xml(analysis):
     xmlstr = analysis.to_xml_str()
 
     # Dump the XML to stdout, so it's visible in the logs:
-    sys.stdout.write(xmlstr)
+    log('resulting XML: %s\n' % xmlstr)
 
     # Use the SHA-1 hash of the report to create a unique filename
     # and dump it in an absolute location in the chroot:
@@ -83,10 +83,16 @@ class Timer:
             result += ' (%i minutes)' % int(elapsed / 60)
         return result
 
-def invoke_cppchecker(gccinv):
+def write_streams(toolname, out, err):
+    for line in out.splitlines():
+        sys.stdout.write('FAKE-GCC: stdout from %r: %s\n' % (toolname, line))
+    for line in err.splitlines():
+        sys.stderr.write('FAKE-GCC: stderr from %r: %s\n' % (toolname, line))
+
+def invoke_cppcheck(gccinv):
     from firehose.parsers.cppcheck import parse_file
 
-    log('invoke_cppchecker for %s' % gccinv)
+    log('invoke_cppcheck for %s' % gccinv)
 
     for sourcefile in gccinv.sources:
         if sourcefile.endswith('.c'): # FIXME: other extensions?
@@ -95,9 +101,9 @@ def invoke_cppchecker(gccinv):
             p = Popen(['cppcheck',
                        '--xml', '--xml-version=2',
                        sourcefile],
-                      stderr=PIPE)
+                      stdout=PIPE, stderr=PIPE)
             out, err = p.communicate()
-            sys.stdout.write(err)
+            write_streams('cppcheck', out, err)
 
             # (there doesn't seem to be a way to have cppcheck directly
             # save its XML output to a given location)
@@ -126,8 +132,9 @@ def invoke_clang_analyzer(gccinv):
                     '-o', resultdir,
                     get_real_executable(gccinv.argv)] + gccinv.argv[1:]
             log(args)
-            p = Popen(args)
+            p = Popen(args, stdout=PIPE, stderr=PIPE)
             out, err = p.communicate()
+            write_streams('scan-build (clang_analyzer)', out, err)
 
             # Given e.g. resultdir='/tmp/tmpQW2l2B', the plist files
             # are an extra level deep e.g.:
@@ -170,10 +177,11 @@ def invoke_cpychecker(gccinv):
             if 1:
                 log(' '.join(args))
             p = Popen(args, stderr=PIPE)
+            p = Popen(args, stdout=PIPE, stderr=PIPE)
             try:
                 t = Timer()
                 out, err = p.communicate()
-                sys.stderr.write(err)
+                write_streams('cpychecker', out, err)
             except KeyboardInterrupt:
                 pass
 
@@ -188,14 +196,14 @@ def invoke_side_effects(argv):
         % ' '.join(sys.argv))
 
     gccinv = GccInvocation(argv)
-    invoke_cppchecker(gccinv)
+    invoke_cppcheck(gccinv)
     invoke_clang_analyzer(gccinv)
     invoke_cpychecker(gccinv)
 
 def parse_gcc_stderr(stderr, stats):
     from firehose.parsers.gcc import parse_file
 
-    log('parse_gcc_stderr(%r)' % stderr)
+    log('parse_gcc_stderr(stderr=%r)' % stderr)
 
     f = StringIO.StringIO(stderr)
     analysis = parse_file(f, stats=stats)
