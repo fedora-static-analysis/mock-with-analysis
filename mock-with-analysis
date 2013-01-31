@@ -72,7 +72,7 @@ class MockConfig:
 
 def setup_chroot(mockcfg, srpmpath):
     # The following things take a relatively long time
-    # If you're just hacking on fake-gcc.py, turn this block off
+    # If you're just hacking on fakegcc.py, turn this block off
     if 1:
         # Experimenting with the script is much faster if we remove
         # the --init here:
@@ -97,7 +97,7 @@ def setup_chroot(mockcfg, srpmpath):
                 mockcfg.cmd(['--copyin', module, os.path.join(HACKED_PATH, 'libcpychecker')])
                 mockcfg.cmd(['--copyin', '../../gccutils.py', HACKED_PATH])
 
-        # Stuff needed by fake-gcc.py:
+        # Stuff needed by fakegcc.py:
         # FIXME: package these and get them into Fedora:
         mockcfg.cmd(['--install', '../firehose/dist/firehose-0.0.1-1.noarch.rpm'])
         mockcfg.cmd(['--install', '../gccinvocation/dist/gccinvocation-0.0.1-1.noarch.rpm'])
@@ -110,9 +110,9 @@ def setup_chroot(mockcfg, srpmpath):
     else:
         shutil.rmtree(os.path.join(mockcfg.get_result_path(), 'static-analysis'))
 
-    mockcfg.cmd(['--copyin', 'fake-gcc.py', '/usr/bin/gcc'])
-    mockcfg.cmd(['--copyin', 'fake-gcc.py', '/usr/bin/g++'])
-    mockcfg.cmd(['--copyin', 'fake-gcc.py', '/usr/bin/c++'])
+    mockcfg.cmd(['--copyin', 'fakegcc.py', '/usr/bin/gcc'])
+    mockcfg.cmd(['--copyin', 'fakegcc.py', '/usr/bin/g++'])
+    mockcfg.cmd(['--copyin', 'fakegcc.py', '/usr/bin/c++'])
 
 
 def rebuild_srpm(mockcfg, srpmpath):
