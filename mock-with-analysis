@@ -107,8 +107,13 @@ def setup_chroot(mockcfg, srpmpath):
         mockcfg.cmd(['--chroot', 'mv /usr/bin/gcc /usr/bin/the-real-gcc'])
         mockcfg.cmd(['--chroot', 'mv /usr/bin/g++ /usr/bin/the-real-g++'])
         mockcfg.cmd(['--chroot', 'mv /usr/bin/c++ /usr/bin/the-real-c++'])
+
+        # Symlink /usr/bin/the-real-cc to /usr/bin/the-real-gcc
+        # (since /usr/bin/cc is a symlink to /usr/bin/gcc):
+        mockcfg.cmd(['--chroot', 'ln -s /usr/bin/the-real-gcc /usr/bin/the-real-cc'])
     else:
-        shutil.rmtree(os.path.join(mockcfg.get_result_path(), 'static-analysis'))
+        shutil.rmtree(os.path.join(mockcfg.get_result_path(), 'static-analysis'),
+                      ignore_errors=True)
 
     mockcfg.cmd(['--copyin', 'fakegcc.py', '/usr/bin/gcc'])
     mockcfg.cmd(['--copyin', 'fakegcc.py', '/usr/bin/g++'])
