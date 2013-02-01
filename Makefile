@@ -31,4 +31,5 @@ gcc-python-plugin_rpm:
 
 html:
 	PYTHONPATH=../firehose \
-	python ./make-report.py
+	python reports/make-simple-report.py \
+	  saved-results/policycoreutils-2.1.13-27.2.fc17.src.rpm-001
