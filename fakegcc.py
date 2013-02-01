@@ -169,7 +169,8 @@ def invoke_cpychecker(gccinv):
             # but unfortunately gcc's option parser seems to not be able to cope with '='
             # within an option's value.  So we do it using dictionary syntax instead:
             pycmd = ('from libcpychecker import main, Options; '
-                     'main(Options(**{"outputxmlpath":"%s"}))' % outputxmlpath)
+                     'main(Options(**{"outputxmlpath":"%s", '
+                     '"verify_refcounting": True}))' % outputxmlpath)
             argv += ['-fplugin=python2',
                      '-fplugin-arg-python2-command=%s' % pycmd]
 
