@@ -7,6 +7,24 @@ from firehose.report import Analysis, Issue, Visitor
 def get_filename(file_):
     return file_.abspath.strip('/build/builddir/BUILD')
 
+def get_internal_filename(file_):
+    '''
+    Given a File with an absolute path within an unpacked tarball within a
+    buildroot:
+    e.g.:
+       '/builddir/build/BUILD/python-ethtool-0.7/python-ethtool/etherinfo.c'
+
+    split out the trailing path fragment relative to the top of the tarball
+    e.g.:
+       'python-ethtool/etherinfo.c'
+
+    The aim is to support comparisons between builds of different versions
+    of the code.
+    '''
+    path = file_.abspath.strip('/build/builddir/BUILD')
+    components = path.split('/')
+    return os.path.join(*components[1:])
+
 class ResultsDir:
     """
     Models a 'static-analysis' subdir as emitted by mock-with-analysis
@@ -65,6 +83,10 @@ class AnalysisIssue(namedtuple('AnalysisIssue',
         return self.issue.location.file.abspath
 
     @property
+    def internal_filename(self):
+        return get_internal_filename(self.file_)
+
+    @property
     def function(self):
         return self.issue.location.function
 
@@ -95,6 +117,10 @@ class Model:
     def open_file(self, file_):
         path = os.path.join(self.rdir.get_sources_dir(), file_.hash_.hexdigest)
         return open(path)
+
+    def get_file_content(self, file_):
+        with self.open_file(file_) as sourcefile:
+            return sourcefile.read()
 
     def iter_analysis_issues(self):
         for analysis in self._analyses:
@@ -168,3 +194,49 @@ class SourceHighlighter:
                          self.formatter)
         return html
 
+    def highlight_file(self, file_, model):
+        if file_ is None:
+            return ''
+        result = ''
+        with model.open_file(file_) as sourcefile:
+                code = sourcefile.read()
+        for i, line in enumerate(self.highlight(code).splitlines()):
+            result += '<a id="file-%s-line-%i"/>' % (file_.hash_.hexdigest, i + 1)
+            result += line
+            result += '\n'
+        return result
+
+def make_issue_note(ai):
+    html = '<div class="inline-error-report">'
+    html += '   <div class="inline-error-report-message">%s</div>' % ai.message.text
+    if ai.notes:
+        html += '   <div class="inline-error-report-notes">%s</div>' % ai.notes.text
+    html += '   <div class="inline-error-report-generator">(emitted by %s)</div>' % ai.generator.name
+    if ai.trace:
+        html += '<p>TODO: a detailed trace is available in the data model (not yet rendered in this report)</p>'
+    html += '</div>'
+    return html
+
+def write_issue_table_for_file(f, file_, ais):
+    f.write('    <table>\n')
+    f.write('    <tr>\n')
+    f.write('      <th>Location</th>\n')
+    f.write('      <th>Tool</th>\n')
+    f.write('      <th>Test ID</th>\n')
+    f.write('      <th>Function</th>\n')
+    f.write('      <th>Issue</th>\n')
+    f.write('    </tr>\n')
+    for ai in sorted(ais, AnalysisIssue.cmp):
+        f.write('    <tr>\n')
+        f.write('      <td>%s:%i:%i</td>\n'
+                % (ai.givenpath,
+                   ai.line,
+                   ai.column))
+        f.write('      <td>%s</td>\n' % ai.generator.name)
+        f.write('      <td>%s</td>\n' % (ai.testid if ai.testid else ''))
+        f.write('      <td>%s</td>\n' % (ai.function.name if ai.function else '')),
+        f.write('      <td><a href="%s">%s</a></td>\n'
+                % ('#file-%s-line-%i' % (file_.hash_.hexdigest, ai.line),
+                   ai.message.text))
+        f.write('    </tr>\n')
+    f.write('    </table>\n')

@@ -1,7 +1,7 @@
 import sys
 
 from reports import get_filename, ResultsDir, AnalysisIssue, Model, \
-    SourceHighlighter
+    SourceHighlighter, make_issue_note, write_issue_table_for_file
 
 def make_html(model, f):
     sh = SourceHighlighter()
@@ -72,28 +72,7 @@ background-color: red;
         f.write('<h2><a id="file-%s">%s</h2>\n' % (file_.hash_.hexdigest, get_filename(file_)))
         ais = ais_by_source.get(file_, set())
         if ais:
-            f.write('    <table>\n')
-            f.write('    <tr>\n')
-            f.write('      <th>Location</th>\n')
-            f.write('      <th>Tool</th>\n')
-            f.write('      <th>Test ID</th>\n')
-            f.write('      <th>Function</th>\n')
-            f.write('      <th>Issue</th>\n')
-            f.write('    </tr>\n')
-            for ai in sorted(ais, AnalysisIssue.cmp):
-                f.write('    <tr>\n')
-                f.write('      <td>%s:%i:%i</td>\n'
-                        % (ai.givenpath,
-                           ai.line,
-                           ai.column))
-                f.write('      <td>%s</td>\n' % ai.generator.name)
-                f.write('      <td>%s</td>\n' % (ai.testid if ai.testid else ''))
-                f.write('      <td>%s</td>\n' % (ai.function.name if ai.function else '')),
-                f.write('      <td><a href="%s">%s</a></td>\n'
-                        % ('#file-%s-line-%i' % (file_.hash_.hexdigest, ai.line),
-                           ai.message.text))
-                f.write('    </tr>\n')
-            f.write('    </table>\n')
+            write_issue_table_for_file(f, file_, ais)
         else:
             f.write('<p>No issues found</p>')
         # Include source inline:
@@ -105,14 +84,7 @@ background-color: red;
             f.write('\n')
             for ai in ais:
                 if ai.line == i + 1:
-                    f.write('<div class="inline-error-report">')
-                    f.write('   <div class="inline-error-report-message">%s</div>' % ai.message.text)
-                    if ai.notes:
-                        f.write('   <div class="inline-error-report-notes">%s</div>' % ai.notes.text)
-                    f.write('   <div class="inline-error-report-generator">(emitted by %s)</div>' % ai.generator.name)
-                    if ai.trace:
-                        f.write('<p>TODO: a detailed trace is available in the data model (not yet rendered in this report)</p>')
-                    f.write('</div>')
+                    f.write(make_issue_note(ai))
 
     f.write('  </body>\n')
     f.write('</html>\n')
