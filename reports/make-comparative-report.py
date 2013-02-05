@@ -133,7 +133,10 @@ def make_html(modelA, modelB, f):
     internal_paths = set(sourcesA_by_internal_path.keys()
                          + sourcesB_by_internal_path.keys())
 
-    title = 'Comparison'
+    sutA = list(modelA.iter_analyses())[0].metadata.sut
+    sutB = list(modelB.iter_analyses())[0].metadata.sut
+
+    title = '%s - comparison view' % sutA.name
     f.write('<html><head><title>%s</title>\n' % title)
 
     f.write('''    <style type="text/css">
@@ -191,6 +194,9 @@ background-color: red;
 
     aisA_by_source_and_generator = modelA.get_analysis_issues_by_source_and_generator()
     aisB_by_source_and_generator = modelB.get_analysis_issues_by_source_and_generator()
+
+    f.write('<p>Old build: <b>%s</b></p>' % sutA)
+    f.write('<p>New build: <b>%s</b></p>' % sutB)
 
     f.write('    <table>\n')
     if 1:
