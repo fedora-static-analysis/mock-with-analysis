@@ -27,7 +27,7 @@ class ComparativeIssues:
                 if m:
                     text = m.group(1)
 
-                key = (ai.generator.name, ai.internal_filename, ai.function, text)
+                key = (ai.generator.name, ai.testid, ai.internal_filename, ai.function, text)
 
                 if key in result:
                     result[key].add(ai)
