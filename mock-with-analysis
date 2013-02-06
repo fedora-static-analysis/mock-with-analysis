@@ -70,6 +70,18 @@ class MockConfig:
             raise RuntimeError(msg)
         return out, err
 
+    def get_nvras(self, name):
+        '''
+        Get a list of the installed NAME-VERSION-RELEASE.ARCHs of the named
+        package in the chroot
+
+        (This assumes that the rpm databases are compatible between the
+        chroot and the host)
+        '''
+        out, err = self.cmd(['--chroot', "rpm -q %s" % name],
+                            captureOut=True)
+        return out.splitlines()
+
 def setup_chroot(mockcfg, srpmpath):
     # The following things take a relatively long time
     # If you're just hacking on fakegcc.py, turn this block off
@@ -147,6 +159,26 @@ def extract_results_from_chroot(mockcfg, srpm, buildarch):
     sourcesdir = os.path.join(dstdir, 'sources')
     mkdir(sourcesdir)
 
+    class FixupGeneratorVersions(Visitor):
+        '''
+        Helper for fixing up version information within a report so that it
+        reflects the underlying rpm metadata in the chroot
+        '''
+        def __init__(self):
+            self.versions = {}
+            for (generator_name, rpmname) in [('clang-analyzer', 'clang-analyzer'),
+                                              ('cppcheck', 'cppcheck'),
+                                              ('cpychecker', 'gcc-python2-plugin'),
+                                              ('gcc', 'gcc')]:
+                # FIXME: there really ought to be just one of each:
+                self.versions[generator_name] = ', '.join(mockcfg.get_nvras(rpmname))
+
+        def visit_generator(self, generator):
+            if generator.name in self.versions:
+                generator.version = self.versions[generator.name]
+
+    generator_versions_fixer = FixupGeneratorVersions()
+
     builddir = os.path.join(mockcfg.get_chroot(), 'builddir')
     for xmlpath in glob.glob(os.path.join(builddir, '*.xml')):
         print(xmlpath)
@@ -179,6 +211,9 @@ def extract_results_from_chroot(mockcfg, srpm, buildarch):
                                    version=version,
                                    release=release,
                                    buildarch=buildarch)
+
+        # Update generator versions:
+        a.accept(generator_versions_fixer)
 
         # Write postprocessed report to mock's "static-analysis/reports" dir:
         xmlstr = a.to_xml_str()
