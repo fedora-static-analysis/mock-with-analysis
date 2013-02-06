@@ -3,63 +3,101 @@ from pprint import pprint
 import re
 import sys
 
-from reports import get_filename, ResultsDir, AnalysisIssue, Model, \
-    SourceHighlighter, make_issue_note, get_internal_filename, \
-    write_issue_table_for_file
+from reports import get_filename, ResultsDir, AnalysisIssue, AnalysisFailure, \
+    Model, \
+    SourceHighlighter, write_common_css, \
+    make_issue_note, make_failure_note, \
+    get_internal_filename, \
+    write_issue_table_for_file, write_failure_table_for_file, \
+    html_escape
 
-class ComparativeIssues:
+class Comparison:
+    """
+    Comparison of a pair of lists of item : what's new, what's
+    fixed, etc
+    """
+    def __init__(self, itemsA, itemsB):
+        self.itemsA = itemsA
+        self.itemsB = itemsB
+
+        itemsA = self.gather_items_by_key(itemsA)
+        itemsB = self.gather_items_by_key(itemsB)
+
+        self.fixed = set() # of itemA
+        self.inboth = set() # of (itemA, itemB) pairs
+        self.new = set() # of itemB
+
+        for key in set(itemsA.keys() + itemsB.keys()):
+            if key in itemsA:
+                if key in itemsB:
+                    # Items found in both old and new:
+                    for itemA in itemsA[key]:
+                        for itemB in itemsB[key]:
+                            self.inboth.add( (itemA, itemB) )
+                else:
+                    # Items found in old but not in new:
+                    for itemA in itemsA[key]:
+                        self.fixed.add(itemA)
+            else:
+                # Issue found in new but not in old:
+                assert key in itemsB
+                for itemB in itemsB[key]:
+                    self.new.add(itemB)
+
+    def gather_items_by_key(self, items):
+        raise NotImplementedError
+
+class ComparativeIssues(Comparison):
     """
     Comparison of a pair of lists of AnalysisIssue : what's new, what's
     fixed, etc
     """
-    def __init__(self, aisA, aisB):
-        self.aisA = aisA
-        self.aisB = aisB
+    def gather_items_by_key(self, items):
+        result = {}
+        for ai in items:
+            # Some cpychecker reports append the location to the message:
+            # e.g. 'calling PyTuple_SetItem with NULL as argument 1 (args) at python-ethtool/ethtool.c:328'
+            # Strip it off if necessary:
+            text = ai.message.text
+            m  = re.match('^(.+) at (.+):[0-9]+$', text)
+            if m:
+                text = m.group(1)
 
-        def gather_issues_by_key(ais):
-            result = {}
-            for ai in ais:
-                # Some cpychecker reports append the location to the message:
-                # e.g. 'calling PyTuple_SetItem with NULL as argument 1 (args) at python-ethtool/ethtool.c:328'
-                # Strip it off if necessary:
-                text = ai.message.text
-                m  = re.match('^(.+) at (.+):[0-9]+$', text)
-                if m:
-                    text = m.group(1)
+            key = (ai.generator.name, ai.testid, ai.internal_filename, ai.function, text)
 
-                key = (ai.generator.name, ai.testid, ai.internal_filename, ai.function, text)
-
-                if key in result:
-                    result[key].add(ai)
-                else:
-                    result[key] = set([ai])
-            return result
-
-        issuesA = gather_issues_by_key(aisA)
-        issuesB = gather_issues_by_key(aisB)
-
-        self.fixed = set() # of aiA
-        self.inboth = set() # of (aiA, aiB) pairs
-        self.new = set() # of aiB
-
-        for key in set(issuesA.keys() + issuesB.keys()):
-            if key in issuesA:
-                if key in issuesB:
-                    # Issues found in both old and new:
-                    for aiA in issuesA[key]:
-                        for aiB in issuesB[key]:
-                            self.inboth.add( (aiA, aiB) )
-                else:
-                    # Issues found in old but not in new:
-                    for aiA in issuesA[key]:
-                        self.fixed.add(aiA)
+            if key in result:
+                result[key].add(ai)
             else:
-                # Issue found in new but not in old:
-                assert key in issuesB
-                for aiB in issuesB[key]:
-                    self.new.add(aiB)
+                result[key] = set([ai])
+        return result
 
-def write_html_diff(f, modelA, modelB, fileA, fileB, aisA, aisB, sh):
+class ComparativeFailures(Comparison):
+    """
+    Comparison of a pair of lists of AnalysisFailure : what's new, what's
+    fixed, etc
+    """
+    def gather_items_by_key(self, items):
+        result = {}
+        for af in items:
+            if af.stderr is not None:
+                # cpychecker tracebacks can be large and contain slightly
+                # changing data, so compare on just the first and last 50
+                # chars for now:
+                firstchars = af.stderr[50]
+                lastchars = af.stderr[-50]
+            else:
+                firstchars = None
+                lastchars = None
+            key = (af.generator.name, af.function, firstchars, lastchars)
+
+            if key in result:
+                result[key].add(af)
+            else:
+                result[key] = set([af])
+        return result
+
+
+def write_html_diff(f, modelA, modelB, fileA, fileB, aisA, aisB, afsA, afsB, sh):
     if fileA is not None:
         srcA = modelA.get_file_content(fileA)
     else:
@@ -76,12 +114,15 @@ def write_html_diff(f, modelA, modelB, fileA, fileB, aisA, aisB, sh):
 
     f.write('<table>\n')
     for tag, i1, i2, j1, j2 in s.get_opcodes():
-        def get_td(idx, html, ais):
+        def get_td(idx, html, ais, afs):
             if idx is not None:
                 linenotes = ''
                 for ai in ais:
                     if ai.line == idx + 1:
                         linenotes += make_issue_note(ai)
+                for af in afs:
+                    if af.line == idx + 1:
+                        linenotes += make_failure_note(af)
                 return '<td width="50%%"><pre>%s</pre>%s</td>' % (html[idx], linenotes)
             else:
                 return '<td width="50%%"></td>'
@@ -89,8 +130,8 @@ def write_html_diff(f, modelA, modelB, fileA, fileB, aisA, aisB, sh):
         def add_line(class_, idxA, idxB):
             f.write('<tr class="%s">%s%s</tr>\n'
                     % (class_,
-                       get_td(idxA, htmlA, aisA),
-                       get_td(idxB, htmlB, aisB)))
+                       get_td(idxA, htmlA, aisA, afsA),
+                       get_td(idxB, htmlB, aisB, afsB)))
 
         if tag == 'replace':
             # There's no guarantee that they have equal lengths,
@@ -139,47 +180,10 @@ def make_html(modelA, modelB, f):
     title = '%s - comparison view' % sutA.name
     f.write('<html><head><title>%s</title>\n' % title)
 
-    f.write('''    <style type="text/css">
-th {
-    background-color: lightgrey;
-}
+    f.write('    <style type="text/css">\n')
 
-.has_issues {
-background-color: red;
-}
+    write_common_css(f)
 
-.inline-error-report {
-    #border: 0.1em dotted #ddffdd;
-    #padding: 1em;
-    border: 0.1em solid #ccc;
-    -moz-box-shadow: 2px 2px 2px #ccc;
-    -webkit-box-shadow: 2px 2px 2px #ccc;
-    box-shadow: 2px 2px 2px #ccc;
-    margin-left: 5em;
-    font-family: proportional;
-    font-style: italic;
-    font-size: 90%;
-}
-
-.inline-error-report-message {
-    font-weight: bold;
-    font-size: 120%;
-}
-
-.replace {
-    background-color: #e0ffff;
-}
-
-.insert {
-    background-color: #ffe0ff;
-}
-
-.delete {
-    background-color: #ffffe0;
-}
-
-
-''')
     f.write(sh.formatter.get_style_defs())
 
     f.write('      </style>\n')
@@ -195,6 +199,9 @@ background-color: red;
     aisA_by_source_and_generator = modelA.get_analysis_issues_by_source_and_generator()
     aisB_by_source_and_generator = modelB.get_analysis_issues_by_source_and_generator()
 
+    afsA_by_source = modelA.get_analysis_failures_by_source()
+    afsB_by_source = modelB.get_analysis_failures_by_source()
+
     f.write('<p>Old build: <b>%s</b></p>' % sutA)
     f.write('<p>New build: <b>%s</b></p>' % sutB)
 
@@ -205,6 +212,7 @@ background-color: red;
         f.write('      <th>New file</th>\n')
         for generator in generators:
             f.write('      <th>%s</th>\n' % generator.name)
+        f.write('      <th>Notes</th>\n')
         f.write('    </tr>\n')
     for internal_path in sorted(internal_paths):
         fileA = sourcesA_by_internal_path.get(internal_path, None)
@@ -227,6 +235,14 @@ background-color: red;
             aisB = aisB_by_source_and_generator.get(keyB, set())
             class_ = 'has_issues' if aisA or aisB else 'no_issues'
             f.write('      <td class="%s">%s / %s</td>\n' % (class_, len(aisA), len(aisB)))
+        afsA = afsA_by_source.get(fileA, [])
+        afsB = afsB_by_source.get(fileB, [])
+        if afsA or afsB:
+            f.write('      <td>Incomplete coverage: old has %i analysis failure(s), new has %i analysis failure(s)</td>\n'
+                    % (len(afsA), len(afsB)))
+        else:
+            f.write('      <td></td>\n')
+
         f.write('    </tr>\n')
     f.write('    </table>\n')
 
@@ -236,6 +252,9 @@ background-color: red;
 
         aisA = modelA.get_analysis_issues_by_source().get(fileA, set())
         aisB = modelB.get_analysis_issues_by_source().get(fileB, set())
+
+        afsA = afsA_by_source.get(fileA, [])
+        afsB = afsB_by_source.get(fileB, [])
 
         if fileA is not None:
             f.write('<a id="file-%s"/>' % fileA.hash_.hexdigest)
@@ -289,7 +308,49 @@ background-color: red;
                 f.write('    </tr>\n')
             f.write('    </table>\n')
 
-        write_html_diff(f, modelA, modelB, fileA, fileB, aisA, aisB, sh)
+        cf = ComparativeFailures(afsA, afsB)
+        if cf.new:
+            f.write('<h2>New failures</h2>')
+            write_failure_table_for_file(f, fileB, cf.new)
+
+        if cf.fixed:
+            f.write('<h2>Fixed failures</h2>')
+            write_failure_table_for_file(f, fileA, cf.fixed)
+
+        if cf.inboth:
+            f.write('<h2>Failures in both old/new</h2>')
+            f.write('    <table>\n')
+            f.write('    <tr>\n')
+            f.write('      <th>Tool</th>\n')
+            f.write('      <th>Old location</th>\n')
+            f.write('      <th>New location</th>\n')
+            f.write('      <th>Function</th>\n')
+            f.write('      <th>stdout</th>\n')
+            f.write('      <th>stderr</th>\n')
+            f.write('      <th>returncode</th>\n')
+            f.write('    </tr>\n')
+            for afA, afB in sorted(cf.inboth,
+                                   lambda ab1, ab2: AnalysisFailure.cmp(ab1[1], ab2[1])):
+                f.write('    <tr>\n')
+                f.write('      <td>%s</td>\n' % afB.generator.name)
+                f.write('      <td>%s:%i:%i</td>\n'
+                        % (afA.givenpath,
+                           afA.line,
+                           afA.column))
+                f.write('      <td>%s:%i:%i</td>\n'
+                        % (afB.givenpath,
+                           afB.line,
+                           afB.column))
+                f.write('      <td>%s</td>\n' % (afB.function.name if afB.function else '')),
+                f.write('      <td>%s</td>\n' % afB.stdout)
+                f.write('      <td><a href="%s">%s</a></td>\n'
+                        % ('#file-%s-line-%i' % (fileB.hash_.hexdigest, afB.line),
+                           html_escape(str(afB.stderr))))
+                f.write('      <td>%s</td>\n' % afB.returncode)
+                f.write('    </tr>\n')
+            f.write('    </table>\n')
+
+        write_html_diff(f, modelA, modelB, fileA, fileB, aisA, aisB, afsA, afsB, sh)
 
     f.write('  </body>\n')
     f.write('</html>\n')

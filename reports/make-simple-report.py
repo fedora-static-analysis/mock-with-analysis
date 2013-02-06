@@ -1,7 +1,9 @@
 import sys
 
 from reports import get_filename, ResultsDir, AnalysisIssue, Model, \
-    SourceHighlighter, make_issue_note, write_issue_table_for_file
+    SourceHighlighter, write_common_css, \
+    make_issue_note, make_failure_note, \
+    write_issue_table_for_file, write_failure_table_for_file
 
 def make_html(model, f):
     sh = SourceHighlighter()
@@ -11,31 +13,10 @@ def make_html(model, f):
     title = ''
     f.write('<html><head><title>%s</title>\n' % title)
 
-    f.write('''    <style type="text/css">
-.has_issues {
-background-color: red;
-}
+    f.write('    <style type="text/css">\n')
 
-.inline-error-report {
-    #border: 0.1em dotted #ddffdd;
-    #padding: 1em;
-    border: 0.1em solid #ccc;
-    -moz-box-shadow: 2px 2px 2px #ccc;
-    -webkit-box-shadow: 2px 2px 2px #ccc;
-    box-shadow: 2px 2px 2px #ccc;
-    margin-left: 5em;
-    font-family: proportional;
-    font-style: italic;
-    font-size: 90%;
-}
+    write_common_css(f)
 
-.inline-error-report-message {
-    font-weight: bold;
-    font-size: 120%;
-}
-
-
-''')
     f.write(sh.formatter.get_style_defs())
 
     f.write('      </style>\n')
@@ -48,6 +29,7 @@ background-color: red;
     generators = model.get_generators()
     ais_by_source = model.get_analysis_issues_by_source()
     ais_by_source_and_generator = model.get_analysis_issues_by_source_and_generator()
+    afs_by_source = model.get_analysis_failures_by_source()
 
     f.write('    <table>\n')
     if 1:
@@ -55,6 +37,7 @@ background-color: red;
         f.write('      <th>Source file</th>\n')
         for generator in generators:
             f.write('      <th>%s</th>\n' % generator.name)
+        f.write('      <th>Notes</th>\n')
         f.write('    </tr>\n')
     for file_ in sources:
         f.write('    <tr>\n')
@@ -65,6 +48,12 @@ background-color: red;
             ais = ais_by_source_and_generator.get(key, set())
             class_ = 'has_issues' if ais else 'no_issues'
             f.write('      <td class="%s">%s</td>\n' % (class_, len(ais)))
+        afs = afs_by_source.get(file_, [])
+        if afs:
+            f.write('      <td>Incomplete coverage: %i analysis failure(s)</td>\n'
+                    % len(afs))
+        else:
+            f.write('      <td></td>\n')
         f.write('    </tr>\n')
     f.write('    </table>\n')
 
@@ -75,6 +64,9 @@ background-color: red;
             write_issue_table_for_file(f, file_, ais)
         else:
             f.write('<p>No issues found</p>')
+        afs = afs_by_source.get(file_, [])
+        if afs:
+            write_failure_table_for_file(f, file_, afs)
         # Include source inline:
         with model.open_file(file_) as sourcefile:
             code = sourcefile.read()
@@ -85,6 +77,9 @@ background-color: red;
             for ai in ais:
                 if ai.line == i + 1:
                     f.write(make_issue_note(ai))
+            for af in afs:
+                if af.line == i + 1:
+                    f.write(make_failure_note(af))
 
     f.write('  </body>\n')
     f.write('</html>\n')

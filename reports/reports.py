@@ -1,8 +1,18 @@
 from collections import namedtuple
 import glob
 import os
+from xml.sax.saxutils import escape
 
-from firehose.report import Analysis, Issue, Visitor
+from firehose.report import Analysis, Issue, Failure, Visitor
+
+# escape() and unescape() takes care of &, < and >.
+html_escape_table = {
+    '"': "&quot;",
+    "'": "&apos;"
+}
+
+def html_escape(text):
+    return escape(text, html_escape_table)
 
 def get_filename(file_):
     return file_.abspath.strip('/build/builddir/BUILD')
@@ -106,6 +116,63 @@ class AnalysisIssue(namedtuple('AnalysisIssue',
     def trace(self):
         return self.issue.trace
 
+class AnalysisFailure(namedtuple('AnalysisFailure',
+                               ['analysis', 'failure'])):
+    def cmp(self, other):
+        c = cmp(self.abspath,
+                other.abspath)
+        if c:
+            return c
+        c = cmp(self.line,
+                other.line)
+        if c:
+            return c
+        return 0
+
+    @property
+    def generator(self):
+        return self.analysis.metadata.generator
+
+    @property
+    def stdout(self):
+        return self.failure.stdout
+
+    @property
+    def stderr(self):
+        return self.failure.stderr
+
+    @property
+    def returncode(self):
+        return self.failure.returncode
+
+    @property
+    def givenpath(self):
+        return self.failure.location.file.givenpath
+
+    @property
+    def abspath(self):
+        return self.failure.location.file.abspath
+
+    @property
+    def internal_filename(self):
+        return get_internal_filename(self.file_)
+
+    @property
+    def function(self):
+        return self.failure.location.function
+
+    @property
+    def line(self):
+        return self.failure.location.line
+
+    @property
+    def column(self):
+        return self.failure.location.column
+
+    @property
+    def file_(self):
+        return self.failure.location.file
+
 class Model:
     def __init__(self, rdir):
         self.rdir = rdir
@@ -127,6 +194,12 @@ class Model:
             for result in analysis.results:
                 if isinstance(result, Issue):
                     yield AnalysisIssue(analysis, result)
+
+    def iter_analysis_failures(self):
+        for analysis in self._analyses:
+            for result in analysis.results:
+                if isinstance(result, Failure):
+                    yield AnalysisFailure(analysis, result)
 
     def get_source_files(self):
         """
@@ -174,6 +247,16 @@ class Model:
                 result[key] = set([ai])
         return result
 
+    def get_analysis_failures_by_source(self):
+        result = {}
+        for af in self.iter_analysis_failures():
+            key = af.file_
+            if key in result:
+                result[key].add(af)
+            else:
+                result[key] = set([af])
+        return result
+
 class SourceHighlighter:
     def __init__(self):
         from pygments.styles import get_style_by_name
@@ -217,6 +300,71 @@ def make_issue_note(ai):
     html += '</div>'
     return html
 
+def make_failure_note(af):
+    html = '<div class="inline-failure-report">'
+    html += '   <div class="inline-failure-report-message">Failure runninng %s</div>' % af.generator.name
+    if af.stdout:
+        html += '   <div class="inline-failure-report-title">stdout</div>'
+        html += '   <div class="inline-failure-report-stdout">%s</div>' % html_escape(af.stdout)
+    if af.stderr:
+        html += '   <div class="inline-failure-report-title">stderr</div>'
+        html += '   <div class="inline-failure-report-stderr">%s</div>' % html_escape(af.stderr)
+    if af.returncode:
+        html += '   <div class="inline-failure-report-title">Return code:</div>'
+        html += '   <div class="inline-failure-report-returncode">%s</div>' % af.returncode
+    html += '</div>'
+    return html
+
+COMMON_CSS = '''
+.has_issues {
+background-color: red;
+}
+
+.inline-error-report {
+    #border: 0.1em dotted #ddffdd;
+    #padding: 1em;
+    border: 0.1em solid #ccc;
+    -moz-box-shadow: 2px 2px 2px #ccc;
+    -webkit-box-shadow: 2px 2px 2px #ccc;
+    box-shadow: 2px 2px 2px #ccc;
+    margin-left: 5em;
+    font-family: proportional;
+    font-style: italic;
+    font-size: 90%;
+}
+
+.inline-error-report-message {
+    font-weight: bold;
+    font-size: 120%;
+}
+
+.inline-failure-report {
+    #border: 0.1em dotted #ddffdd;
+    #padding: 1em;
+    border: 0.1em solid #ccc;
+    -moz-box-shadow: 2px 2px 2px #ccc;
+    -webkit-box-shadow: 2px 2px 2px #ccc;
+    box-shadow: 2px 2px 2px #ccc;
+    margin-left: 5em;
+    font-family: proportional;
+    font-style: italic;
+    font-size: 90%;
+}
+
+.inline-failure-report-message {
+    font-weight: bold;
+    font-size: 120%;
+}
+
+.inline-failure-report-title {
+    font-weight: bold;
+}
+
+'''
+
+def write_common_css(f):
+    f.write(COMMON_CSS)
+
 def write_issue_table_for_file(f, file_, ais):
     f.write('    <table>\n')
     f.write('    <tr>\n')
@@ -237,6 +385,33 @@ def write_issue_table_for_file(f, file_, ais):
         f.write('      <td>%s</td>\n' % (ai.function.name if ai.function else '')),
         f.write('      <td><a href="%s">%s</a></td>\n'
                 % ('#file-%s-line-%i' % (file_.hash_.hexdigest, ai.line),
-                   ai.message.text))
+                   html_escape(ai.message.text)))
+        f.write('    </tr>\n')
+    f.write('    </table>\n')
+
+def write_failure_table_for_file(f, file_, afs):
+    f.write('    <h3>Incomplete coverage</h3>\n')
+    f.write('    <table>\n')
+    f.write('    <tr>\n')
+    f.write('      <th>Tool</th>\n')
+    f.write('      <th>Location</th>\n')
+    f.write('      <th>Function</th>\n')
+    f.write('      <th>stdout</th>\n')
+    f.write('      <th>stderr</th>\n')
+    f.write('      <th>returncode</th>\n')
+    f.write('    </tr>\n')
+    for af in sorted(afs, AnalysisFailure.cmp):
+        f.write('    <tr>\n')
+        f.write('      <td>%s</td>\n' % af.generator.name)
+        f.write('      <td>%s:%i:%i</td>\n'
+                % (af.givenpath,
+                   af.line,
+                   af.column))
+        f.write('      <td>%s</td>\n' % (af.function.name if af.function else '')),
+        f.write('      <td>%s</td>\n' % af.stdout)
+        f.write('      <td><a href="%s">%s</a></td>\n'
+                % ('#file-%s-line-%i' % (file_.hash_.hexdigest, af.line),
+                   html_escape(str(af.stderr))))
+        f.write('      <td>%s</td>\n' % af.returncode)
         f.write('    </tr>\n')
     f.write('    </table>\n')
