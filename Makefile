@@ -18,18 +18,26 @@ local_rpms: firehose_rpm gccinvocation_rpm # gcc-python-plugin_rpm
 
 # https://github.com/fedora-static-analysis/firehose
 firehose_rpm:
-	cd ../firehose && python setup.py bdist_rpm
+	cd ../firehose && rm -rf build && python setup.py bdist_rpm
 
 # https://github.com/fedora-static-analysis/gccinvocation
 gccinvocation_rpm:
-	cd ../gccinvocation && make unittests && python setup.py bdist_rpm
+	cd ../gccinvocation && make unittests && rm -rf build && python setup.py bdist_rpm
 
 # need the firehose branch:
 # http://git.fedorahosted.org/cgit/gcc-python-plugin.git/log/?h=firehose
 gcc-python-plugin_rpm:
-	cd ../gcc-python/cpychecker-firehose-output && make VERSION=0.11.firehose tarball rpm
+	cd ../gcc-python/cpychecker-firehose-output && rm $(HOME)/rpmbuild/SOURCES/gcc-python-plugin-0.11.firehose.tar.gz && make VERSION=0.11.firehose tarball rpm
 
+# firehose-saved-data:
+#   https://github.com/fedora-static-analysis/firehose-saved-data
 html:
 	PYTHONPATH=../firehose \
 	python reports/make-simple-report.py \
-	  saved-results/policycoreutils-2.1.13-27.2.fc17.src.rpm-001
+	  ../firehose-saved-data/python-ethtool/0.7/4.fc19/x86_64/003
+
+html-comparison:
+	PYTHONPATH=../firehose \
+	python reports/make-comparative-report.py \
+	  ../firehose-saved-data/python-ethtool/0.7/4.fc19/x86_64/003 \
+	  ../firehose-saved-data/python-ethtool/0.8/0.dc309d6b2781dc3810021d2e4e2d669f40227b63.fc17/x86_64/002
