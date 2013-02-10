@@ -21,6 +21,16 @@
 #
 # This code assumes that it is /usr/bin/gcc and that the real GCC has been
 # moved to /usr/bin/the-real-gcc
+#
+# Note that we can't write log messages to stdout if we're pretending
+# to be gcc, since some tools parse the stdout of gcc
+# For example, this failure from a configure script:
+#     checking for ld used by gcc... no
+#     configure: error: no acceptable ld found in $PATH
+# turned out to be due to it capturing stdout from this invocation:
+#     cc -print-prog-name=ld
+# which naturally went wrong when run with an earlier version of
+# fakegcc.py that sent debug log messages to stdout.
 
 import glob
 import hashlib
@@ -34,7 +44,7 @@ import time
 from gccinvocation import GccInvocation
 
 def log(msg):
-    sys.stdout.write('FAKE-GCC: %s\n' % msg)
+    sys.stderr.write('FAKE-GCC: %s\n' % msg)
 
 def write_analysis_as_xml(analysis):
     # Ensure we have absolute paths (within the chroot) and SHA-1 hashes
@@ -85,7 +95,7 @@ class Timer:
 
 def write_streams(toolname, out, err):
     for line in out.splitlines():
-        sys.stdout.write('FAKE-GCC: stdout from %r: %s\n' % (toolname, line))
+        sys.stderr.write('FAKE-GCC: stdout from %r: %s\n' % (toolname, line))
     for line in err.splitlines():
         sys.stderr.write('FAKE-GCC: stderr from %r: %s\n' % (toolname, line))
 
