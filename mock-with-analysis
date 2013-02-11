@@ -134,7 +134,7 @@ def setup_chroot(mockcfg, srpmpath):
                  'fakegcc.py', '/usr/lib/python2.7/site-packages/fakegcc.py'])
     for script in ['invoke-cppcheck',
                    'invoke-clang-analyzer',
-                   #'invoke-cpychecker'
+                   'invoke-cpychecker',
                    ]:
         mockcfg.cmd(['--copyin', script, '/usr/bin/%s' % script])
 
