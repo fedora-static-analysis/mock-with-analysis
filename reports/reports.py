@@ -161,18 +161,26 @@ class AnalysisFailure(namedtuple('AnalysisFailure',
 
     @property
     def function(self):
+        if self.failure.location is None:
+            return None
         return self.failure.location.function
 
     @property
     def line(self):
+        if self.failure.location is None:
+            return None
         return self.failure.location.line
 
     @property
     def column(self):
+        if self.failure.location is None:
+            return None
         return self.failure.location.column
 
     @property
     def file_(self):
+        if self.failure.location is None:
+            return None
         return self.failure.location.file
 
 class Model:
@@ -321,8 +329,10 @@ def make_failure_note(af):
         html += '   <div class="inline-failure-report-field">%s</div>' % html_escape(af.message.text)
     if af.customfields:
         for key, value in af.customfields.iteritems():
+            html += '   <div>'
             html += '   <span class="inline-failure-report-title">%s</span>:' % html_escape(key)
             html += '   <span class="inline-failure-report-field">%s</span>' % html_escape(str(value))
+            html += '   </div>'
     html += '</div>'
     return html
 
@@ -402,7 +412,7 @@ def write_issue_table_for_file(f, file_, ais):
         f.write('      <td>%s</td>\n' % (ai.testid if ai.testid else ''))
         f.write('      <td>%s</td>\n' % (ai.function.name if ai.function else '')),
         f.write('      <td><a href="%s">%s</a></td>\n'
-                % ('#file-%s-line-%i' % (file_.hash_.hexdigest, ai.line),
+                % ('#file-%s-line-%i' % (file_.hash_.hexdigest, ai.line if ai.line else 0),
                    html_escape(ai.message.text)))
         f.write('    </tr>\n')
     f.write('    </table>\n')
@@ -422,14 +432,23 @@ def write_failure_table_for_file(f, file_, afs):
         f.write('    <tr>\n')
         f.write('      <td>%s</td>\n' % af.generator.name)
         f.write('      <td>%s</td>\n' % af.failureid)
-        f.write('      <td>%s:%i:%i</td>\n'
-                % (af.givenpath,
-                   af.line,
-                   af.column))
+        if af.line is not None:
+            f.write('      <td>%s:%i:%i</td>\n'
+                    % (af.givenpath,
+                       af.line,
+                       af.column))
+        else:
+            f.write('      <td>%s</td>\n'
+                    % (af.givenpath, ))
         f.write('      <td>%s</td>\n' % (af.function.name if af.function else '')),
-        f.write('      <td><a href="%s">%s</a></td>\n'
-                % ('#file-%s-line-%i' % (file_.hash_.hexdigest, af.line),
-                   html_escape(str(af.message))))
+        if af.line is not None:
+            f.write('      <td><a href="%s">%s</a></td>\n'
+                    % ('#file-%s-line-%i' % (file_.hash_.hexdigest, af.line),
+                       html_escape(str(af.message))))
+        else:
+            f.write('      <td><a href="%s">%s</a></td>\n'
+                    % (('#file-%s-line-0' % file_.hash_.hexdigest),
+                       html_escape(str(af.message))))
         f.write('      <td>%s</td>\n' % af.customfields)
         f.write('    </tr>\n')
     f.write('    </table>\n')

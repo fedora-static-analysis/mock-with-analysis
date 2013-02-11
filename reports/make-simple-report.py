@@ -72,6 +72,16 @@ def make_html(model, f):
             write_failure_table_for_file(f, file_, afs)
         # Include source inline:
         code = model.get_file_content(file_)
+
+        # Write any lineless issues/failures at the start of the file:
+        f.write('<a id="file-%s-line-0"/>' % (file_.hash_.hexdigest, ))
+        for ai in ais:
+            if ai.line is None:
+                f.write(make_issue_note(ai))
+        for af in afs:
+            if af.line is None:
+                f.write(make_failure_note(af))
+
         for i, line in enumerate(sh.highlight(code).splitlines()):
             f.write('<a id="file-%s-line-%i"/>' % (file_.hash_.hexdigest, i + 1))
             f.write(line)
