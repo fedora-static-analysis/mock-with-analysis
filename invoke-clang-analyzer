@@ -55,7 +55,6 @@ def invoke_clang_analyzer(gccinv, dstxmlpath):
 
 
 if __name__ == '__main__':
-    invoked_tool = sys.argv[1]
-    dstxmlpath =  sys.argv[2]
-    gccinv = GccInvocation([invoked_tool] + sys.argv[3:])
+    dstxmlpath =  sys.argv[1]
+    gccinv = GccInvocation(sys.argv[2:])
     invoke_clang_analyzer(gccinv, dstxmlpath)

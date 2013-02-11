@@ -55,7 +55,6 @@ def invoke_cppcheck(gccinv, dstxmlpath):
                     write_analysis_as_xml(analysis, dstxmlpath)
 
 if __name__ == '__main__':
-    invoked_tool = sys.argv[1]
-    dstxmlpath =  sys.argv[2]
-    gccinv = GccInvocation([invoked_tool] + sys.argv[3:])
+    dstxmlpath =  sys.argv[1]
+    gccinv = GccInvocation(sys.argv[2:])
     invoke_cppcheck(gccinv, dstxmlpath)

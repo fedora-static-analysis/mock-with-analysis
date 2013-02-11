@@ -171,8 +171,10 @@ def invoke_side_effects(argv):
 
                 t = Timer()
 
-                p = Popen([script, argv[0], dstxmlpath]
-                          + argv, # FIXME: argv should only have one sourcefile
+                # FIXME: argv should only have one sourcefile
+                args = [script, dstxmlpath] + argv
+                log('invoking args: %r' % args)
+                p = Popen(args,
                           stdout=PIPE, stderr=PIPE)
                 out, err = p.communicate()
                 write_streams(script, out, err)
