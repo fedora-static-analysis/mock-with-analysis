@@ -169,6 +169,8 @@ def invoke_side_effects(argv):
                     dstxmlpath = f.name
                 assert not os.path.exists(dstxmlpath)
 
+                t = Timer()
+
                 p = Popen([script, argv[0], dstxmlpath]
                           + argv, # FIXME: argv should only have one sourcefile
                           stdout=PIPE, stderr=PIPE)
