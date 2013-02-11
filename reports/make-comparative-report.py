@@ -1,3 +1,4 @@
+import codecs
 from difflib import SequenceMatcher, HtmlDiff
 from pprint import pprint
 import re
@@ -5,7 +6,7 @@ import sys
 
 from reports import get_filename, ResultsDir, AnalysisIssue, AnalysisFailure, \
     Model, \
-    SourceHighlighter, write_common_css, \
+    SourceHighlighter, write_common_css, write_common_meta, \
     make_issue_note, make_failure_note, \
     get_internal_filename, \
     write_issue_table_for_file, write_failure_table_for_file, \
@@ -177,7 +178,9 @@ def make_html(modelA, modelB, f):
     sutB = list(modelB.iter_analyses())[0].metadata.sut
 
     title = '%s - comparison view' % sutA.name
-    f.write('<html><head><title>%s</title>\n' % title)
+    f.write('<html>\n')
+    write_common_meta(f)
+    f.write('<head><title>%s</title>\n' % title)
 
     f.write('    <style type="text/css">\n')
 
@@ -361,7 +364,7 @@ def main(argv):
     rdirB = ResultsDir(pathB)
     modelA = Model(rdirA)
     modelB = Model(rdirB)
-    with open('index.html', 'w') as f:
+    with codecs.open('index.html', encoding='utf-8', mode='w') as f:
         make_html(modelA, modelB, f)
 
 main(sys.argv)

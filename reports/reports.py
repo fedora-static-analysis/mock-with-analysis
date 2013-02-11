@@ -3,6 +3,8 @@ import glob
 import os
 from xml.sax.saxutils import escape
 
+from bs4 import UnicodeDammit # python-beautifulsoup4 on Fedora
+
 from firehose.report import Analysis, Issue, Failure, Visitor
 
 # escape() and unescape() takes care of &, < and >.
@@ -181,13 +183,23 @@ class Model:
     def iter_analyses(self):
         return self._analyses
 
-    def open_file(self, file_):
+    def _open_file(self, file_):
+        """
+        Get a file-like object for reading the content of the source file
+        as bytes
+        """
         path = os.path.join(self.rdir.get_sources_dir(), file_.hash_.hexdigest)
         return open(path)
 
     def get_file_content(self, file_):
-        with self.open_file(file_) as sourcefile:
-            return sourcefile.read()
+        """
+        Get a unicode instance containing the content of the source file,
+        making best guess as to the encoding(s)
+        """
+        with self._open_file(file_) as sourcefile:
+            bytes_ = sourcefile.read()
+            unicode_ = UnicodeDammit(bytes_).unicode_markup
+            return unicode_
 
     def iter_analysis_issues(self):
         for analysis in self._analyses:
@@ -281,8 +293,7 @@ class SourceHighlighter:
         if file_ is None:
             return ''
         result = ''
-        with model.open_file(file_) as sourcefile:
-                code = sourcefile.read()
+        code = model.get_file_content(file_)
         for i, line in enumerate(self.highlight(code).splitlines()):
             result += '<a id="file-%s-line-%i"/>' % (file_.hash_.hexdigest, i + 1)
             result += line

@@ -1,7 +1,8 @@
+import codecs
 import sys
 
 from reports import get_filename, ResultsDir, AnalysisIssue, Model, \
-    SourceHighlighter, write_common_css, \
+    SourceHighlighter, write_common_meta, write_common_css, \
     make_issue_note, make_failure_note, \
     write_issue_table_for_file, write_failure_table_for_file
 
@@ -11,7 +12,9 @@ def make_html(model, f):
     analyses = list(model.iter_analyses())
 
     title = ''
-    f.write('<html><head><title>%s</title>\n' % title)
+    f.write('<html>\n')
+    write_common_meta(f)
+    f.write('<head><title>%s</title>\n' % title)
 
     f.write('    <style type="text/css">\n')
 
@@ -68,8 +71,7 @@ def make_html(model, f):
         if afs:
             write_failure_table_for_file(f, file_, afs)
         # Include source inline:
-        with model.open_file(file_) as sourcefile:
-            code = sourcefile.read()
+        code = model.get_file_content(file_)
         for i, line in enumerate(sh.highlight(code).splitlines()):
             f.write('<a id="file-%s-line-%i"/>' % (file_.hash_.hexdigest, i + 1))
             f.write(line)
@@ -88,7 +90,7 @@ def main(argv):
     path = argv[1]
     rdir = ResultsDir(path)
     model = Model(rdir)
-    with open('index.html', 'w') as f:
+    with codecs.open('index.html', encoding='utf-8', mode='w') as f:
         make_html(model, f)
 
 main(sys.argv)
