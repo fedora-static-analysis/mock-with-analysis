@@ -134,16 +134,16 @@ class AnalysisFailure(namedtuple('AnalysisFailure',
         return self.analysis.metadata.generator
 
     @property
-    def stdout(self):
-        return self.failure.stdout
+    def failureid(self):
+        return self.failure.failureid
 
     @property
-    def stderr(self):
-        return self.failure.stderr
+    def message(self):
+        return self.failure.message
 
     @property
-    def returncode(self):
-        return self.failure.returncode
+    def customfields(self):
+        return self.failure.customfields
 
     @property
     def givenpath(self):
@@ -302,18 +302,21 @@ def make_issue_note(ai):
 
 def make_failure_note(af):
     html = '<div class="inline-failure-report">'
-    html += '   <div class="inline-failure-report-message">Failure runninng %s</div>' % af.generator.name
-    if af.stdout:
-        html += '   <div class="inline-failure-report-title">stdout</div>'
-        html += '   <div class="inline-failure-report-stdout">%s</div>' % html_escape(af.stdout)
-    if af.stderr:
-        html += '   <div class="inline-failure-report-title">stderr</div>'
-        html += '   <div class="inline-failure-report-stderr">%s</div>' % html_escape(af.stderr)
-    if af.returncode:
-        html += '   <div class="inline-failure-report-title">Return code:</div>'
-        html += '   <div class="inline-failure-report-returncode">%s</div>' % af.returncode
+    html += ('   <div class="inline-failure-report-message">Failure running %s %s</div>'
+             % (af.generator.name,
+                (' (%r)' % af.failureid) if af.failureid is not None else ''))
+    if af.message:
+        html += '   <div class="inline-failure-report-title">Message</div>'
+        html += '   <div class="inline-failure-report-field">%s</div>' % html_escape(af.message.text)
+    if af.customfields:
+        for key, value in af.customfields.iteritems():
+            html += '   <span class="inline-failure-report-title">%s</span>:' % html_escape(key)
+            html += '   <span class="inline-failure-report-field">%s</span>' % html_escape(str(value))
     html += '</div>'
     return html
+
+def write_common_meta(f):
+    f.write('<meta http-equiv="Content-Type" content="text/html; charset=utf-8">\n')
 
 COMMON_CSS = '''
 .has_issues {
@@ -360,6 +363,10 @@ background-color: red;
     font-weight: bold;
 }
 
+.inline-failure-report-field {
+    font-weight: bold;
+}
+
 '''
 
 def write_common_css(f):
@@ -394,24 +401,24 @@ def write_failure_table_for_file(f, file_, afs):
     f.write('    <table>\n')
     f.write('    <tr>\n')
     f.write('      <th>Tool</th>\n')
+    f.write('      <th>Failure ID</th>\n')
     f.write('      <th>Location</th>\n')
     f.write('      <th>Function</th>\n')
-    f.write('      <th>stdout</th>\n')
-    f.write('      <th>stderr</th>\n')
-    f.write('      <th>returncode</th>\n')
+    f.write('      <th>Message</th>\n')
+    f.write('      <th>Data</th>\n')
     f.write('    </tr>\n')
     for af in sorted(afs, AnalysisFailure.cmp):
         f.write('    <tr>\n')
         f.write('      <td>%s</td>\n' % af.generator.name)
+        f.write('      <td>%s</td>\n' % af.failureid)
         f.write('      <td>%s:%i:%i</td>\n'
                 % (af.givenpath,
                    af.line,
                    af.column))
         f.write('      <td>%s</td>\n' % (af.function.name if af.function else '')),
-        f.write('      <td>%s</td>\n' % af.stdout)
         f.write('      <td><a href="%s">%s</a></td>\n'
                 % ('#file-%s-line-%i' % (file_.hash_.hexdigest, af.line),
-                   html_escape(str(af.stderr))))
-        f.write('      <td>%s</td>\n' % af.returncode)
+                   html_escape(str(af.message))))
+        f.write('      <td>%s</td>\n' % af.customfields)
         f.write('    </tr>\n')
     f.write('    </table>\n')

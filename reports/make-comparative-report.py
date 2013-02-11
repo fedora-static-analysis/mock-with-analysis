@@ -79,16 +79,15 @@ class ComparativeFailures(Comparison):
     def gather_items_by_key(self, items):
         result = {}
         for af in items:
-            if af.stderr is not None:
+            if af.failureid == 'python-exception':
+                tb = af.customfields['traceback']
                 # cpychecker tracebacks can be large and contain slightly
                 # changing data, so compare on just the first and last 50
                 # chars for now:
-                firstchars = af.stderr[50]
-                lastchars = af.stderr[-50]
+                detail = tb[50] + tb[-50]
             else:
-                firstchars = None
-                lastchars = None
-            key = (af.generator.name, af.function, firstchars, lastchars)
+                detail = None
+            key = (af.generator.name, af.failureid, af.message, af.function, detail)
 
             if key in result:
                 result[key].add(af)
@@ -322,17 +321,18 @@ def make_html(modelA, modelB, f):
             f.write('    <table>\n')
             f.write('    <tr>\n')
             f.write('      <th>Tool</th>\n')
+            f.write('      <th>Failure ID</th>\n')
             f.write('      <th>Old location</th>\n')
             f.write('      <th>New location</th>\n')
             f.write('      <th>Function</th>\n')
-            f.write('      <th>stdout</th>\n')
-            f.write('      <th>stderr</th>\n')
-            f.write('      <th>returncode</th>\n')
+            f.write('      <th>Message</th>\n')
+            f.write('      <th>Data</th>\n')
             f.write('    </tr>\n')
             for afA, afB in sorted(cf.inboth,
                                    lambda ab1, ab2: AnalysisFailure.cmp(ab1[1], ab2[1])):
                 f.write('    <tr>\n')
                 f.write('      <td>%s</td>\n' % afB.generator.name)
+                f.write('      <td>%s</td>\n' % afB.failureid)
                 f.write('      <td>%s:%i:%i</td>\n'
                         % (afA.givenpath,
                            afA.line,
@@ -342,11 +342,10 @@ def make_html(modelA, modelB, f):
                            afB.line,
                            afB.column))
                 f.write('      <td>%s</td>\n' % (afB.function.name if afB.function else '')),
-                f.write('      <td>%s</td>\n' % afB.stdout)
                 f.write('      <td><a href="%s">%s</a></td>\n'
                         % ('#file-%s-line-%i' % (fileB.hash_.hexdigest, afB.line),
-                           html_escape(str(afB.stderr))))
-                f.write('      <td>%s</td>\n' % afB.returncode)
+                           html_escape(str(afB.message))))
+                f.write('      <td>%s</td>\n' % (html_escape(afB.customfields)) if afB.customfields else '')
                 f.write('    </tr>\n')
             f.write('    </table>\n')
 
