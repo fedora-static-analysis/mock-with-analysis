@@ -41,12 +41,15 @@ import sys
 import tempfile
 import time
 
+from firehose.report import Analysis, Generator, Metadata, Failure, \
+    Location, File, Message, CustomFields
+
 from gccinvocation import GccInvocation
 
 def log(msg):
     sys.stderr.write('FAKE-GCC: %s\n' % msg)
 
-def write_analysis_as_xml(analysis):
+def write_analysis_as_xml(analysis, dstxmlpath=None):
     # Ensure we have absolute paths (within the chroot) and SHA-1 hashes
     # of all files referred to in the report:
     analysis.fixup_files(os.getcwd(), 'sha1')
@@ -56,11 +59,13 @@ def write_analysis_as_xml(analysis):
     # Dump the XML to stdout, so it's visible in the logs:
     log('resulting XML: %s\n' % xmlstr)
 
-    # Use the SHA-1 hash of the report to create a unique filename
-    # and dump it in an absolute location in the chroot:
-    hexdigest = hashlib.sha1(xmlstr).hexdigest()
-    filename = '/builddir/%s.xml' % hexdigest
-    with open(filename, 'w') as f:
+    if dstxmlpath is None:
+        # Use the SHA-1 hash of the report to create a unique filename
+        # and dump it in an absolute location in the chroot:
+        hexdigest = hashlib.sha1(xmlstr).hexdigest()
+        dstxmlpath = '/builddir/%s.xml' % hexdigest
+
+    with open(dstxmlpath, 'w') as f:
         f.write(xmlstr)
 
 def make_file(givenpath):
@@ -98,63 +103,6 @@ def write_streams(toolname, out, err):
         sys.stderr.write('FAKE-GCC: stdout from %r: %s\n' % (toolname, line))
     for line in err.splitlines():
         sys.stderr.write('FAKE-GCC: stderr from %r: %s\n' % (toolname, line))
-
-def invoke_cppcheck(gccinv):
-    from firehose.parsers.cppcheck import parse_file
-
-    log('invoke_cppcheck for %s' % gccinv)
-
-    for sourcefile in gccinv.sources:
-        if sourcefile.endswith('.c'): # FIXME: other extensions?
-            # Invoke cppcheck, capturing output in its XML format
-            t = Timer()
-            p = Popen(['cppcheck',
-                       '--xml', '--xml-version=2',
-                       sourcefile],
-                      stdout=PIPE, stderr=PIPE)
-            out, err = p.communicate()
-            write_streams('cppcheck', out, err)
-
-            # (there doesn't seem to be a way to have cppcheck directly
-            # save its XML output to a given location)
-
-            with tempfile.NamedTemporaryFile() as outfile:
-                outfile.write(err)
-                outfile.flush()
-
-                with open(outfile.name) as infile:
-                    # Parse stderr into firehose XML format and save:
-                    analysis = parse_file(infile,
-                                          file_=make_file(sourcefile),
-                                          stats=make_stats(t))
-                    write_analysis_as_xml(analysis)
-
-def invoke_clang_analyzer(gccinv):
-    from firehose.parsers.clanganalyzer import parse_plist
-
-    log('invoke_clang_analyzer for %s' % gccinv)
-
-    for sourcefile in gccinv.sources:
-        if sourcefile.endswith('.c'): # FIXME: other extensions?
-            t = Timer()
-            resultdir = tempfile.mkdtemp()
-            args = ['scan-build', '-v', '-plist',
-                    '-o', resultdir,
-                    get_real_executable(gccinv.argv)] + gccinv.argv[1:]
-            log(args)
-            p = Popen(args, stdout=PIPE, stderr=PIPE)
-            out, err = p.communicate()
-            write_streams('scan-build (clang_analyzer)', out, err)
-
-            # Given e.g. resultdir='/tmp/tmpQW2l2B', the plist files
-            # are an extra level deep e.g.:
-            #  '/tmp/tmpQW2l2B/2013-01-22-1/report-MlwJri.plist'
-            for plistpath in glob.glob(os.path.join(resultdir,
-                                                    '*/*.plist')):
-                analysis = parse_plist(plistpath,
-                                       file_=make_file(sourcefile),
-                                       stats=make_stats(t))
-                write_analysis_as_xml(analysis)
 
 def invoke_cpychecker(gccinv):
     from firehose.report import Analysis
@@ -207,8 +155,59 @@ def invoke_side_effects(argv):
         % ' '.join(sys.argv))
 
     gccinv = GccInvocation(argv)
-    invoke_cppcheck(gccinv)
-    invoke_clang_analyzer(gccinv)
+
+    # Try to run each side effect in a subprocess, passing in a path
+    # for the XML results to be written to.
+    # Cover a multitude of possible failures by detecting if no output
+    # was written, and capturing *that* as a failure
+    for sourcefile in gccinv.sources:
+        if sourcefile.endswith('.c'): # FIXME: other extensions?
+            for script, genname in [('invoke-cppcheck', 'cppcheck'),
+                                    ('invoke-clang-analyzer', 'clang-analyzer'),
+                                    ]:
+                with tempfile.NamedTemporaryFile() as f:
+                    dstxmlpath = f.name
+                assert not os.path.exists(dstxmlpath)
+
+                p = Popen([script, argv[0], dstxmlpath]
+                          + argv, # FIXME: argv should only have one sourcefile
+                          stdout=PIPE, stderr=PIPE)
+                out, err = p.communicate()
+                write_streams(script, out, err)
+
+                if os.path.exists(dstxmlpath):
+                    with open(dstxmlpath) as f:
+                        analysis = Analysis.from_xml(f)
+                else:
+                    # Something went wrong; write a failure report:
+                    generator = Generator(name=genname,
+                                          version=None)
+                    metadata = Metadata(generator=generator,
+                                        sut=None,
+                                        file_ = make_file(sourcefile),
+                                        stats = make_stats(t))
+                    file_ = File(givenpath=sourcefile,
+                                 abspath=None,
+                                 hash_=None)
+                    location = Location(file=file_,
+                                        function=None,
+                                        point=None,
+                                        range_=None)
+                    message = Message('Unable to locate XML output from %s'
+                                      % script)
+                    customfields = CustomFields()
+                    customfields['stdout'] = out
+                    customfields['stderr'] = err
+                    customfields['returncode'] = p.returncode
+                    results = [Failure(failureid='no-output-found',
+                                       location=location,
+                                       message=message,
+                                       customfields=customfields)]
+                    analysis = Analysis(metadata, results)
+                    analysis.metadata.file_ = make_file(sourcefile)
+                    analysis.metadata.stats = make_stats(t)
+                write_analysis_as_xml(analysis)
+
     invoke_cpychecker(gccinv)
 
 def parse_gcc_stderr(stderr, stats):
@@ -240,7 +239,7 @@ def invoke_real_executable(argv):
         pass
     return p.returncode
 
-
-invoke_side_effects(sys.argv)
-r = invoke_real_executable(sys.argv)
-sys.exit(r)
+if __name__ == '__main__':
+    invoke_side_effects(sys.argv)
+    r = invoke_real_executable(sys.argv)
+    sys.exit(r)

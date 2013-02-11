@@ -130,7 +130,13 @@ def setup_chroot(mockcfg, srpmpath):
     mockcfg.cmd(['--copyin', 'fakegcc.py', '/usr/bin/gcc'])
     mockcfg.cmd(['--copyin', 'fakegcc.py', '/usr/bin/g++'])
     mockcfg.cmd(['--copyin', 'fakegcc.py', '/usr/bin/c++'])
-
+    mockcfg.cmd(['--copyin',
+                 'fakegcc.py', '/usr/lib/python2.7/site-packages/fakegcc.py'])
+    for script in ['invoke-cppcheck',
+                   'invoke-clang-analyzer',
+                   #'invoke-cpychecker'
+                   ]:
+        mockcfg.cmd(['--copyin', script, '/usr/bin/%s' % script])
 
 def rebuild_srpm(mockcfg, srpmpath):
     # Rebuild the src.rpm, using the hacked-up gcc:
