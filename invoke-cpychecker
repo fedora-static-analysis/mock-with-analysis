@@ -49,14 +49,15 @@ def invoke_cpychecker(gccinv, dstxmlpath):
             # within an option's value.  So we do it using dictionary syntax instead:
             pycmd = ('from libcpychecker import main, Options; '
                      'main(Options(**{"outputxmlpath":"%s", '
-                     '"verify_refcounting": True}))' % outputxmlpath)
+                     '"verify_refcounting": True, '
+                     '"maxtrans": 1024, '
+                     '}))' % outputxmlpath)
             argv += ['-fplugin=python2',
                      '-fplugin-arg-python2-command=%s' % pycmd]
 
             args = [get_real_executable(argv)] + argv[1:]
             if 1:
                 log(' '.join(args))
-            p = Popen(args, stderr=PIPE)
             p = Popen(args, stdout=PIPE, stderr=PIPE)
             try:
                 t = Timer()
