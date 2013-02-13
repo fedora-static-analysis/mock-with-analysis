@@ -36,13 +36,16 @@ import glob
 import hashlib
 import os
 import StringIO
-from subprocess import Popen, PIPE, STDOUT
 import sys
 import tempfile
 import time
 
+# http://pypi.python.org/pypi/subprocess32
+# so that we can use timeouts
+from subprocess32 import Popen, PIPE, STDOUT, TimeoutExpired
+
 from firehose.report import Analysis, Generator, Metadata, Failure, \
-    Location, File, Message, CustomFields
+    Location, File, Message
 
 from gccinvocation import GccInvocation
 
@@ -104,6 +107,29 @@ def write_streams(toolname, out, err):
     for line in err.splitlines():
         sys.stderr.write('FAKE-GCC: stderr from %r: %s\n' % (toolname, line))
 
+def make_failed_analysis(genname, sourcefile, t, msgtext, failureid):
+    # Something went wrong; write a failure report:
+    generator = Generator(name=genname,
+                          version=None)
+    metadata = Metadata(generator=generator,
+                        sut=None,
+                        file_ = make_file(sourcefile),
+                        stats = make_stats(t))
+    file_ = File(givenpath=sourcefile,
+                 abspath=None,
+                 hash_=None)
+    location = Location(file=file_,
+                        function=None,
+                        point=None,
+                        range_=None)
+    message = Message(msgtext)
+    results = [Failure(failureid=failureid,
+                       location=location,
+                       message=message,
+                       customfields=None)]
+    analysis = Analysis(metadata, results)
+    return analysis
+
 def invoke_side_effects(argv):
     log("invoke_side_effects: %s"
         % ' '.join(sys.argv))
@@ -119,6 +145,11 @@ def invoke_side_effects(argv):
             for script, genname in [('invoke-cppcheck', 'cppcheck'),
                                     ('invoke-clang-analyzer', 'clang-analyzer'),
                                     ('invoke-cpychecker', 'cpychecker'),
+
+                                    # Uncomment the following to test a
+                                    # checker that fails to write any XML:
+                                    # ('echo', 'failing-checker'),
+
                                     ]:
                 with tempfile.NamedTemporaryFile() as f:
                     dstxmlpath = f.name
@@ -129,46 +160,33 @@ def invoke_side_effects(argv):
                 singleinv = gccinv.restrict_to_one_source(sourcefile)
                 singleargv = singleinv.argv
 
+                TIMEOUT=60
                 t = Timer()
 
                 args = [script, dstxmlpath] + singleargv
                 log('invoking args: %r' % args)
                 p = Popen(args,
                           stdout=PIPE, stderr=PIPE)
-                out, err = p.communicate()
-                write_streams(script, out, err)
+                try:
+                    out, err = p.communicate(timeout=TIMEOUT)
+                    write_streams(script, out, err)
 
-                if os.path.exists(dstxmlpath):
-                    with open(dstxmlpath) as f:
-                        analysis = Analysis.from_xml(f)
-                else:
-                    # Something went wrong; write a failure report:
-                    generator = Generator(name=genname,
-                                          version=None)
-                    metadata = Metadata(generator=generator,
-                                        sut=None,
-                                        file_ = make_file(sourcefile),
-                                        stats = make_stats(t))
-                    file_ = File(givenpath=sourcefile,
-                                 abspath=None,
-                                 hash_=None)
-                    location = Location(file=file_,
-                                        function=None,
-                                        point=None,
-                                        range_=None)
-                    message = Message('Unable to locate XML output from %s'
-                                      % script)
-                    customfields = CustomFields()
-                    customfields['stdout'] = out
-                    customfields['stderr'] = err
-                    customfields['returncode'] = p.returncode
-                    results = [Failure(failureid='no-output-found',
-                                       location=location,
-                                       message=message,
-                                       customfields=customfields)]
-                    analysis = Analysis(metadata, results)
-                    analysis.metadata.file_ = make_file(sourcefile)
-                    analysis.metadata.stats = make_stats(t)
+                    if os.path.exists(dstxmlpath):
+                        with open(dstxmlpath) as f:
+                            analysis = Analysis.from_xml(f)
+                    else:
+                        analysis = make_failed_analysis(genname, sourcefile, t,
+                                                        msgtext=('Unable to locate XML output from %s'
+                                                                 % script),
+                                                        failureid='no-output-found')
+                        analysis.set_custom_field('stdout', out)
+                        analysis.set_custom_field('stderr', err)
+                        analysis.set_custom_field('returncode', p.returncode)
+                except TimeoutExpired:
+                    analysis = make_failed_analysis(genname, sourcefile, t,
+                                                    msgtext='Timeout running %s' % genname,
+                                                    failureid='timeout')
+                    analysis.set_custom_field('timeout', TIMEOUT)
                 analysis.set_custom_field('gcc-invocation', ' '.join(argv))
                 write_analysis_as_xml(analysis)
 
