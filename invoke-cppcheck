@@ -33,9 +33,10 @@ def invoke_cppcheck(gccinv, dstxmlpath):
         if sourcefile.endswith('.c'): # FIXME: other extensions?
             # Invoke cppcheck, capturing output in its XML format
             t = Timer()
-            p = Popen(['cppcheck',
-                       '--xml', '--xml-version=2',
-                       sourcefile],
+            args = ['cppcheck',
+                    '--xml', '--xml-version=2',
+                    sourcefile]
+            p = Popen(args,
                       stdout=PIPE, stderr=PIPE)
             out, err = p.communicate()
             write_streams('cppcheck', out, err)
@@ -52,6 +53,10 @@ def invoke_cppcheck(gccinv, dstxmlpath):
                     analysis = parse_file(infile,
                                           file_=make_file(sourcefile),
                                           stats=make_stats(t))
+                    analysis.set_custom_field('cppcheck-invocation',
+                                              ' '.join(args))
+                    analysis.set_custom_field('stdout', out)
+                    analysis.set_custom_field('stderr', err)
                     write_analysis_as_xml(analysis, dstxmlpath)
 
 if __name__ == '__main__':

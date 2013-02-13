@@ -51,6 +51,11 @@ def invoke_clang_analyzer(gccinv, dstxmlpath):
                 analysis = parse_plist(plistpath,
                                        file_=make_file(sourcefile),
                                        stats=make_stats(t))
+                analysis.set_custom_field('scan-build-invocation',
+                                          ' '.join(args))
+                analysis.set_custom_field('stdout', out)
+                analysis.set_custom_field('stderr', err)
+                analysis.set_custom_field('plistpath', plistpath)
                 write_analysis_as_xml(analysis, dstxmlpath)
 
 

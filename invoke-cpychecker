@@ -69,6 +69,10 @@ def invoke_cpychecker(gccinv, dstxmlpath):
                 analysis = Analysis.from_xml(f)
             analysis.metadata.file_ = make_file(sourcefile)
             analysis.metadata.stats = make_stats(t)
+            analysis.set_custom_field('cpychecker-invocation',
+                                      ' '.join(args))
+            analysis.set_custom_field('stdout', out)
+            analysis.set_custom_field('stderr', err)
             write_analysis_as_xml(analysis, dstxmlpath)
 
 if __name__ == '__main__':
