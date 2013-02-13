@@ -124,10 +124,14 @@ def invoke_side_effects(argv):
                     dstxmlpath = f.name
                 assert not os.path.exists(dstxmlpath)
 
+                # Restrict the invocation to just one source file at a
+                # time:
+                singleinv = gccinv.restrict_to_one_source(sourcefile)
+                singleargv = singleinv.argv
+
                 t = Timer()
 
-                # FIXME: argv should only have one sourcefile
-                args = [script, dstxmlpath] + argv
+                args = [script, dstxmlpath] + singleargv
                 log('invoking args: %r' % args)
                 p = Popen(args,
                           stdout=PIPE, stderr=PIPE)
@@ -165,6 +169,7 @@ def invoke_side_effects(argv):
                     analysis = Analysis(metadata, results)
                     analysis.metadata.file_ = make_file(sourcefile)
                     analysis.metadata.stats = make_stats(t)
+                analysis.set_custom_field('gcc-invocation', ' '.join(argv))
                 write_analysis_as_xml(analysis)
 
 def parse_gcc_stderr(stderr, stats):
