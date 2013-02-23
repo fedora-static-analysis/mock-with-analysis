@@ -83,8 +83,16 @@ class AnalysisIssue(namedtuple('AnalysisIssue',
         return self.analysis.metadata.generator
 
     @property
+    def sut(self):
+        return self.analysis.metadata.sut
+
+    @property
     def testid(self):
         return self.issue.testid
+
+    @property
+    def location(self):
+        return self.issue.location
 
     @property
     def givenpath(self):
@@ -136,6 +144,10 @@ class AnalysisFailure(namedtuple('AnalysisFailure',
         return self.analysis.metadata.generator
 
     @property
+    def sut(self):
+        return self.analysis.metadata.sut
+
+    @property
     def failureid(self):
         return self.failure.failureid
 
@@ -146,6 +158,10 @@ class AnalysisFailure(namedtuple('AnalysisFailure',
     @property
     def customfields(self):
         return self.failure.customfields
+
+    @property
+    def location(self):
+        return self.failure.location
 
     @property
     def givenpath(self):
@@ -191,12 +207,15 @@ class Model:
     def iter_analyses(self):
         return self._analyses
 
+    def _get_file_path(self, file_):
+        return os.path.join(self.rdir.get_sources_dir(), file_.hash_.hexdigest)
+
     def _open_file(self, file_):
         """
         Get a file-like object for reading the content of the source file
         as bytes
         """
-        path = os.path.join(self.rdir.get_sources_dir(), file_.hash_.hexdigest)
+        path = self._get_file_path(file_)
         return open(path)
 
     def get_file_content(self, file_):
