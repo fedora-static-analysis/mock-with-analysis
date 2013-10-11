@@ -5,7 +5,7 @@ from xml.sax.saxutils import escape
 
 from bs4 import UnicodeDammit # python-beautifulsoup4 on Fedora
 
-from firehose.report import Analysis, Issue, Failure, Visitor
+from firehose.model import Analysis, Issue, Failure, Visitor
 
 # escape() and unescape() takes care of &, < and >.
 html_escape_table = {

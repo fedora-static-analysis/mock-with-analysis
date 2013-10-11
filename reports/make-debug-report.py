@@ -2,7 +2,7 @@ from collections import namedtuple
 import glob
 import os
 
-from firehose.report import Analysis, Issue
+from firehose.model import Analysis, Issue
 
 class Result(namedtuple('Result',
                         ['filename', 'analysis', 'issue'])):

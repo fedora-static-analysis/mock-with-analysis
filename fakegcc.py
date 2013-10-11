@@ -44,7 +44,7 @@ import time
 # so that we can use timeouts
 from subprocess32 import Popen, PIPE, STDOUT, TimeoutExpired
 
-from firehose.report import Analysis, Generator, Metadata, Failure, \
+from firehose.model import Analysis, Generator, Metadata, Failure, \
     Location, File, Message
 
 from gccinvocation import GccInvocation
@@ -57,7 +57,7 @@ def write_analysis_as_xml(analysis, dstxmlpath=None):
     # of all files referred to in the report:
     analysis.fixup_files(os.getcwd(), 'sha1')
 
-    xmlstr = analysis.to_xml_str()
+    xmlstr = analysis.to_xml_bytes()
 
     # Dump the XML to stdout, so it's visible in the logs:
     log('resulting XML: %s\n' % xmlstr)
@@ -72,13 +72,13 @@ def write_analysis_as_xml(analysis, dstxmlpath=None):
         f.write(xmlstr)
 
 def make_file(givenpath):
-    from firehose.report import File
+    from firehose.model import File
     return File(givenpath=givenpath,
                 abspath=None,
                 hash_=None)
 
 def make_stats(timer):
-    from firehose.report import Stats
+    from firehose.model import Stats
     return Stats(wallclocktime=timer.get_elapsed_time())
 
 class Timer:
