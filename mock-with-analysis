@@ -109,13 +109,12 @@ def setup_chroot(mockcfg, srpmpath):
                 mockcfg.cmd(['--copyin', module, os.path.join(HACKED_PATH, 'libcpychecker')])
                 mockcfg.cmd(['--copyin', '../../gccutils.py', HACKED_PATH])
 
-        # Stuff needed by fakegcc.py:
+        # Stuff needed by fakegcc.py or firehose:
+        mockcfg.cmd(['--install', 'python-subprocess32'])
+        mockcfg.cmd(['--install', 'python-six'])
         # FIXME: package these and get them into Fedora:
-        mockcfg.cmd(['--install', '../firehose/dist/firehose-0.0.1-1.noarch.rpm'])
-        mockcfg.cmd(['--install', '../gccinvocation/dist/gccinvocation-0.0.1-1.noarch.rpm'])
-        mockcfg.cmd(['--install', '/home/david/rpmbuild/RPMS/x86_64/python-subprocess32-3.2.3-1.fc17.x86_64.rpm'])
-        # ^^^ review request for python-subprocess32:
-        #        https://bugzilla.redhat.com/show_bug.cgi?id=910891
+        mockcfg.cmd(['--install', '../firehose/dist/firehose-0.3-1.noarch.rpm'])
+        mockcfg.cmd(['--install', '../gccinvocation/dist/gccinvocation-0.1-1.noarch.rpm'])
 
         # Override the real gcc/g++ with our fake ones, which add the necessary flags
         # and then invokes the real one:
