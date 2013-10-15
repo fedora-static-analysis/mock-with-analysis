@@ -39,6 +39,7 @@ import StringIO
 import sys
 import tempfile
 import time
+import logging
 
 # http://pypi.python.org/pypi/subprocess32
 # so that we can use timeouts
@@ -49,8 +50,14 @@ from firehose.model import Analysis, Generator, Metadata, Failure, \
 
 from gccinvocation import GccInvocation
 
+def init_log():
+    logging.basicConfig(format='%(asctime)s %(message)s',
+                        datefmt='%H:%M:%S',
+                        level=logging.INFO,
+                        filename='/builddir/fakegcc.log')
+
 def log(msg):
-    sys.stderr.write('FAKE-GCC: %s\n' % msg)
+    logging.info(msg)
 
 def write_analysis_as_xml(analysis, dstxmlpath=None):
     # Ensure we have absolute paths (within the chroot) and SHA-1 hashes
@@ -103,9 +110,9 @@ class Timer:
 
 def write_streams(toolname, out, err):
     for line in out.splitlines():
-        sys.stderr.write('FAKE-GCC: stdout from %r: %s\n' % (toolname, line))
+        log('stdout from %r: %s\n' % (toolname, line))
     for line in err.splitlines():
-        sys.stderr.write('FAKE-GCC: stderr from %r: %s\n' % (toolname, line))
+        log('stderr from %r: %s\n' % (toolname, line))
 
 def make_failed_analysis(genname, sourcefile, t, msgtext, failureid):
     # Something went wrong; write a failure report:
@@ -220,6 +227,7 @@ def invoke_real_executable(argv):
     return p.returncode
 
 if __name__ == '__main__':
+    init_log()
     invoke_side_effects(sys.argv)
     r = invoke_real_executable(sys.argv)
     sys.exit(r)
