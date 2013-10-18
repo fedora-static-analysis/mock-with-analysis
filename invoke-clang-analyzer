@@ -36,6 +36,7 @@ def invoke_clang_analyzer(gccinv, dstxmlpath):
             t = Timer()
             resultdir = tempfile.mkdtemp()
             args = ['scan-build', '-v', '-plist',
+                    '--use-analyzer', '/usr/bin/clang', # rhbz 923834
                     '-o', resultdir,
                     get_real_executable(gccinv.argv)] + gccinv.argv[1:]
             log(args)

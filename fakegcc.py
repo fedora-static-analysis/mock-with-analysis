@@ -39,25 +39,32 @@ import StringIO
 import sys
 import tempfile
 import time
+import logging
 
 # http://pypi.python.org/pypi/subprocess32
 # so that we can use timeouts
 from subprocess32 import Popen, PIPE, STDOUT, TimeoutExpired
 
-from firehose.report import Analysis, Generator, Metadata, Failure, \
+from firehose.model import Analysis, Generator, Metadata, Failure, \
     Location, File, Message
 
 from gccinvocation import GccInvocation
 
+def init_log():
+    logging.basicConfig(format='%(asctime)s %(message)s',
+                        datefmt='%H:%M:%S',
+                        level=logging.INFO,
+                        filename='/builddir/fakegcc.log')
+
 def log(msg):
-    sys.stderr.write('FAKE-GCC: %s\n' % msg)
+    logging.info(msg)
 
 def write_analysis_as_xml(analysis, dstxmlpath=None):
     # Ensure we have absolute paths (within the chroot) and SHA-1 hashes
     # of all files referred to in the report:
     analysis.fixup_files(os.getcwd(), 'sha1')
 
-    xmlstr = analysis.to_xml_str()
+    xmlstr = analysis.to_xml_bytes()
 
     # Dump the XML to stdout, so it's visible in the logs:
     log('resulting XML: %s\n' % xmlstr)
@@ -72,13 +79,13 @@ def write_analysis_as_xml(analysis, dstxmlpath=None):
         f.write(xmlstr)
 
 def make_file(givenpath):
-    from firehose.report import File
+    from firehose.model import File
     return File(givenpath=givenpath,
                 abspath=None,
                 hash_=None)
 
 def make_stats(timer):
-    from firehose.report import Stats
+    from firehose.model import Stats
     return Stats(wallclocktime=timer.get_elapsed_time())
 
 class Timer:
@@ -103,9 +110,9 @@ class Timer:
 
 def write_streams(toolname, out, err):
     for line in out.splitlines():
-        sys.stderr.write('FAKE-GCC: stdout from %r: %s\n' % (toolname, line))
+        log('stdout from %r: %s\n' % (toolname, line))
     for line in err.splitlines():
-        sys.stderr.write('FAKE-GCC: stderr from %r: %s\n' % (toolname, line))
+        log('stderr from %r: %s\n' % (toolname, line))
 
 def make_failed_analysis(genname, sourcefile, t, msgtext, failureid):
     # Something went wrong; write a failure report:
@@ -220,6 +227,7 @@ def invoke_real_executable(argv):
     return p.returncode
 
 if __name__ == '__main__':
+    init_log()
     invoke_side_effects(sys.argv)
     r = invoke_real_executable(sys.argv)
     sys.exit(r)

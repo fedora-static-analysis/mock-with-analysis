@@ -25,7 +25,7 @@ import shutil
 from subprocess import check_output, Popen, PIPE
 import sys
 
-from firehose.report import Analysis, Issue, SourceRpm, Hash, Visitor
+from firehose.model import Analysis, Issue, SourceRpm, Hash, Visitor
 
 class MockConfig:
     def __init__(self, name):
@@ -109,13 +109,12 @@ def setup_chroot(mockcfg, srpmpath):
                 mockcfg.cmd(['--copyin', module, os.path.join(HACKED_PATH, 'libcpychecker')])
                 mockcfg.cmd(['--copyin', '../../gccutils.py', HACKED_PATH])
 
-        # Stuff needed by fakegcc.py:
+        # Stuff needed by fakegcc.py or firehose:
+        mockcfg.cmd(['--install', 'python-subprocess32'])
+        mockcfg.cmd(['--install', 'python-six'])
         # FIXME: package these and get them into Fedora:
-        mockcfg.cmd(['--install', '../firehose/dist/firehose-0.0.1-1.noarch.rpm'])
-        mockcfg.cmd(['--install', '../gccinvocation/dist/gccinvocation-0.0.1-1.noarch.rpm'])
-        mockcfg.cmd(['--install', '/home/david/rpmbuild/RPMS/x86_64/python-subprocess32-3.2.3-1.fc17.x86_64.rpm'])
-        # ^^^ review request for python-subprocess32:
-        #        https://bugzilla.redhat.com/show_bug.cgi?id=910891
+        mockcfg.cmd(['--install', '../firehose/dist/firehose-0.3-1.noarch.rpm'])
+        mockcfg.cmd(['--install', '../gccinvocation/dist/gccinvocation-0.1-1.noarch.rpm'])
 
         # Override the real gcc/g++ with our fake ones, which add the necessary flags
         # and then invokes the real one:
@@ -200,13 +199,16 @@ def extract_results_from_chroot(mockcfg, srpm, buildarch):
                 # the chroot) to the full path as we see it:
                 # e.g. from '/builddir/build/BUILD/python-ethtool-0.7/python-ethtool/ethtool.c')
                 # to '/var/lib/mock/fedora-17-x86_64/root/builddir/build/BUILD/python-ethtool-0.7/python-ethtool/ethtool.c'
-                srcpath = mockcfg.get_path(file_.abspath)
-                with open(srcpath) as f:
-                    # FIXME: harcdoded hash
-                    hexdigest = hashlib.sha1(f.read()).hexdigest()
-                dstpath = os.path.join(sourcesdir, hexdigest)
-                shutil.copy(srcpath, dstpath)
-                file_.hash_ = Hash(alg='sha1', hexdigest=hexdigest)
+                try:
+                    srcpath = mockcfg.get_path(file_.abspath)
+                    with open(srcpath) as f:
+                        # FIXME: harcdoded hash
+                        hexdigest = hashlib.sha1(f.read()).hexdigest()
+                    dstpath = os.path.join(sourcesdir, hexdigest)
+                    shutil.copy(srcpath, dstpath)
+                    file_.hash_ = Hash(alg='sha1', hexdigest=hexdigest)
+                except IOError as e:
+                    print('Cannot extract file %s' % file_.abspath)
 
         with open(xmlpath) as f:
             a = Analysis.from_xml(f)
@@ -225,7 +227,7 @@ def extract_results_from_chroot(mockcfg, srpm, buildarch):
         a.accept(generator_versions_fixer)
 
         # Write postprocessed report to mock's "static-analysis/reports" dir:
-        xmlstr = a.to_xml_str()
+        xmlstr = a.to_xml_bytes()
         hexdigest = hashlib.sha1(xmlstr).hexdigest()
         filename = os.path.join(reportsdir, '%s.xml' % hexdigest)
         with open(filename, 'w') as f:

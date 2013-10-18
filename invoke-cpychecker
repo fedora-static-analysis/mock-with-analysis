@@ -26,7 +26,7 @@ from firehose.parsers.cppcheck import parse_file
 from gccinvocation import GccInvocation
 
 def invoke_cpychecker(gccinv, dstxmlpath):
-    from firehose.report import Analysis
+    from firehose.model import Analysis
 
     log('invoke_cpychecker for %s' % gccinv)
     for sourcefile in gccinv.sources:
