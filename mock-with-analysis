@@ -199,13 +199,16 @@ def extract_results_from_chroot(mockcfg, srpm, buildarch):
                 # the chroot) to the full path as we see it:
                 # e.g. from '/builddir/build/BUILD/python-ethtool-0.7/python-ethtool/ethtool.c')
                 # to '/var/lib/mock/fedora-17-x86_64/root/builddir/build/BUILD/python-ethtool-0.7/python-ethtool/ethtool.c'
-                srcpath = mockcfg.get_path(file_.abspath)
-                with open(srcpath) as f:
-                    # FIXME: harcdoded hash
-                    hexdigest = hashlib.sha1(f.read()).hexdigest()
-                dstpath = os.path.join(sourcesdir, hexdigest)
-                shutil.copy(srcpath, dstpath)
-                file_.hash_ = Hash(alg='sha1', hexdigest=hexdigest)
+                try:
+                    srcpath = mockcfg.get_path(file_.abspath)
+                    with open(srcpath) as f:
+                        # FIXME: harcdoded hash
+                        hexdigest = hashlib.sha1(f.read()).hexdigest()
+                    dstpath = os.path.join(sourcesdir, hexdigest)
+                    shutil.copy(srcpath, dstpath)
+                    file_.hash_ = Hash(alg='sha1', hexdigest=hexdigest)
+                except IOError as e:
+                    print('Cannot extract file %s' % file_.abspath)
 
         with open(xmlpath) as f:
             a = Analysis.from_xml(f)
