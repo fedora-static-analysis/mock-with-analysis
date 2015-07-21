@@ -228,6 +228,10 @@ def invoke_real_executable(argv):
 
 if __name__ == '__main__':
     init_log()
-    invoke_side_effects(sys.argv)
-    r = invoke_real_executable(sys.argv)
-    sys.exit(r)
+    try:
+        invoke_side_effects(sys.argv)
+        r = invoke_real_executable(sys.argv)
+        sys.exit(r)
+    except Exception, e:
+        log(e)
+        raise e
