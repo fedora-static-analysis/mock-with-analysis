@@ -1,6 +1,6 @@
 #! /usr/bin/env python
-#   Copyright 2012, 2013 David Malcolm <dmalcolm@redhat.com>
-#   Copyright 2012, 2013 Red Hat, Inc.
+#   Copyright 2012, 2013, 2015 David Malcolm <dmalcolm@redhat.com>
+#   Copyright 2012, 2013, 2015 Red Hat, Inc.
 #
 #   This is free software: you can redistribute it and/or modify it
 #   under the terms of the GNU General Public License as published by
@@ -15,6 +15,25 @@
 #   You should have received a copy of the GNU General Public License
 #   along with this program.  If not, see
 #   <http://www.gnu.org/licenses/>.
+
+"""
+Use "mock" to rebuild an SRPM, but hacking up "gcc" in the chroot to
+be fakegcc.py, which runs the real gcc but also runs various other
+tools as side-effects.
+
+Usage:
+
+ Rebuilding a given SRPM:
+   $ ./mock-with-analysis fedora-22-x86_64 libpng-1.6.16-3.fc22.src.rpm
+
+Notes to self when hacking on this:
+
+ To poke around inside the chroot:
+   $ mock -r fedora-22-x86_64 --shell
+
+ Quickly updating the "gcc" in the chroot:
+   $ mock -r fedora-22-x86_64 --copyin fakegcc.py /usr/bin/gcc
+"""
 
 import argparse
 import glob
@@ -97,8 +116,9 @@ def setup_chroot(mockcfg, srpmpath):
         mockcfg.cmd(['--install', 'clang-analyzer'])
 
         # Install the pre-built gcc-python-plugin (from the firehose branch):
-        mockcfg.cmd(['--install',
-                      '/home/david/rpmbuild/RPMS/x86_64/gcc-python2-plugin-0.11.firehose-1.fc17.x86_64.rpm'])
+        if 0:
+            mockcfg.cmd(['--install',
+                         '/home/david/rpmbuild/RPMS/x86_64/gcc-python2-plugin-0.11.firehose-1.fc17.x86_64.rpm'])
 
         # Copy up latest version of the libcpychecker code from a working copy
         # overriding the copy from the pre-built plugin:
@@ -112,9 +132,8 @@ def setup_chroot(mockcfg, srpmpath):
         # Stuff needed by fakegcc.py or firehose:
         mockcfg.cmd(['--install', 'python-subprocess32'])
         mockcfg.cmd(['--install', 'python-six'])
-        # FIXME: package these and get them into Fedora:
-        mockcfg.cmd(['--install', '../firehose/dist/firehose-0.3-1.noarch.rpm'])
-        mockcfg.cmd(['--install', '../gccinvocation/dist/gccinvocation-0.1-1.noarch.rpm'])
+        mockcfg.cmd(['--install', 'python-firehose'])
+        mockcfg.cmd(['--install', 'python-gccinvocation'])
 
         # Override the real gcc/g++ with our fake ones, which add the necessary flags
         # and then invokes the real one:
@@ -132,13 +151,6 @@ def setup_chroot(mockcfg, srpmpath):
     mockcfg.cmd(['--copyin', 'fakegcc.py', '/usr/bin/gcc'])
     mockcfg.cmd(['--copyin', 'fakegcc.py', '/usr/bin/g++'])
     mockcfg.cmd(['--copyin', 'fakegcc.py', '/usr/bin/c++'])
-    mockcfg.cmd(['--copyin',
-                 'fakegcc.py', '/usr/lib/python2.7/site-packages/fakegcc.py'])
-    for script in ['invoke-cppcheck',
-                   'invoke-clang-analyzer',
-                   'invoke-cpychecker',
-                   ]:
-        mockcfg.cmd(['--copyin', script, '/usr/bin/%s' % script])
 
 def rebuild_srpm(mockcfg, srpmpath):
     # Rebuild the src.rpm, using the hacked-up gcc:
