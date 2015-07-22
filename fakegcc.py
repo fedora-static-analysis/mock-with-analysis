@@ -619,7 +619,7 @@ class BuggyToolTests(ToolTests):
          self.assert_metadata(analysis, 'buggy', sourcefile)
 
     def test_exception_handling(self):
-        analysis = self.invoke('harmless.c')
+        analysis = self.invoke('test-sources/harmless.c')
         #print(analysis)
         self.assertEqual(len(analysis.results), 1)
         r0 = analysis.results[0]
@@ -649,7 +649,7 @@ class RealGccTests(ToolTests):
         self.assertEqual(len(analysis.results), 0)
 
     def test_timeout(self):
-        sourcefile = 'harmless.c'
+        sourcefile = 'test-sources/harmless.c'
         se, driver = self.make_driver()
         se.timeout = 0
         gccinv = GccInvocation(['gcc', sourcefile])
@@ -663,17 +663,18 @@ class RealGccTests(ToolTests):
         self.assert_has_custom_field(analysis, 'command-line')
 
     def test_harmless_file(self):
-        analysis = self.invoke('harmless.c')
+        analysis = self.invoke('test-sources/harmless.c')
         #print(analysis)
         self.assertEqual(len(analysis.results), 0)
 
     def test_divide_by_zero(self):
-        analysis = self.invoke('divide-by-zero.c', ['-Wall'])
+        analysis = self.invoke('test-sources/divide-by-zero.c', ['-Wall'])
         self.assertEqual(len(analysis.results), 1)
         r0 = analysis.results[0]
         self.assertIsInstance(r0, Issue)
         self.assertEqual(r0.testid, 'div-by-zero')
-        self.assertEqual(r0.location.file.givenpath, 'divide-by-zero.c')
+        self.assertEqual(r0.location.file.givenpath,
+                         'test-sources/divide-by-zero.c')
         self.assertEqual(r0.location.function.name, 'divide_by_zero')
         self.assertEqual(r0.location.point.line, 3)
         self.assertEqual(r0.message.text, 'division by zero')
@@ -698,7 +699,7 @@ class CppcheckTests(ToolTests):
         self.assertEqual(analysis.results[0].failureid, 'bad-exit-code')
 
     def test_timeout(self):
-        sourcefile = 'harmless.c'
+        sourcefile = 'test-sources/harmless.c'
         se, driver = self.make_driver()
         se.timeout = 0
         gccinv = GccInvocation(['gcc', sourcefile])
@@ -712,31 +713,33 @@ class CppcheckTests(ToolTests):
         self.assert_has_custom_field(analysis, 'command-line')
 
     def test_harmless_file(self):
-        analysis = self.invoke('harmless.c')
+        analysis = self.invoke('test-sources/harmless.c')
         #print(analysis)
         self.assertEqual(len(analysis.results), 0)
 
     def test_read_through_null(self):
-        analysis = self.invoke('read-through-null.c')
+        analysis = self.invoke('test-sources/read-through-null.c')
         self.assertEqual(len(analysis.results), 1)
         r0 = analysis.results[0]
         self.assertIsInstance(r0, Issue)
         self.assertEqual(r0.testid, 'nullPointer')
-        self.assertEqual(r0.location.file.givenpath, 'read-through-null.c')
+        self.assertEqual(r0.location.file.givenpath,
+                         'test-sources/read-through-null.c')
         self.assertEqual(r0.location.point.line, 3)
         self.assertEqual(r0.message.text,
                          "Null pointer dereference")
         self.assertEqual(r0.severity, 'error')
 
     def test_out_of_bounds(self):
-        analysis = self.invoke('out-of-bounds.c')
+        analysis = self.invoke('test-sources/out-of-bounds.c')
         #print(analysis)
         self.assertEqual(len(analysis.results), 2)
 
         r0 = analysis.results[0]
         self.assertIsInstance(r0, Issue)
         self.assertEqual(r0.testid, 'arrayIndexOutOfBounds')
-        self.assertEqual(r0.location.file.givenpath, 'out-of-bounds.c')
+        self.assertEqual(r0.location.file.givenpath,
+                         'test-sources/out-of-bounds.c')
         self.assertEqual(r0.location.point.line, 5)
         self.assertEqual(
             r0.message.text,
@@ -767,7 +770,7 @@ class ClangAnalyzerTests(ToolTests):
         self.assertEqual(analysis.results[0].failureid, 'bad-exit-code')
 
     def test_timeout(self):
-        sourcefile = 'harmless.c'
+        sourcefile = 'test-sources/harmless.c'
         se, driver = self.make_driver()
         se.timeout = 0
         gccinv = GccInvocation(['gcc', sourcefile])
@@ -781,18 +784,19 @@ class ClangAnalyzerTests(ToolTests):
         self.assert_has_custom_field(analysis, 'command-line')
 
     def test_harmless_file(self):
-        analysis = self.invoke('harmless.c')
+        analysis = self.invoke('test-sources/harmless.c')
         #print(analysis)
         self.assertEqual(len(analysis.results), 0)
 
     def test_read_through_null(self):
-        analysis = self.invoke('read-through-null.c')
+        analysis = self.invoke('test-sources/read-through-null.c')
         #print(analysis)
         self.assertEqual(len(analysis.results), 1)
         r0 = analysis.results[0]
         self.assertIsInstance(r0, Issue)
         self.assertEqual(r0.testid, None)
-        self.assertEqual(r0.location.file.givenpath, 'read-through-null.c')
+        self.assertEqual(r0.location.file.givenpath,
+                         'test-sources/read-through-null.c')
         self.assertEqual(r0.location.point.line, 3)
         self.assertEqual(r0.message.text,
                          "Dereference of null pointer")
@@ -800,14 +804,15 @@ class ClangAnalyzerTests(ToolTests):
         self.assertIsInstance(r0.trace, Trace)
 
     def test_out_of_bounds(self):
-        analysis = self.invoke('out-of-bounds.c')
+        analysis = self.invoke('test-sources/out-of-bounds.c')
         #print(analysis)
         self.assertEqual(len(analysis.results), 1)
 
         r0 = analysis.results[0]
         self.assertIsInstance(r0, Issue)
         self.assertEqual(r0.testid, None)
-        self.assertEqual(r0.location.file.givenpath, 'out-of-bounds.c')
+        self.assertEqual(r0.location.file.givenpath,
+                         'test-sources/out-of-bounds.c')
         self.assertEqual(r0.location.point.line, 5)
         self.assertEqual(r0.message.text,
                          "Undefined or garbage value returned to caller")
@@ -833,7 +838,7 @@ class CpycheckerTests(ToolTests):
         self.assertEqual(analysis.results[0].failureid, 'no-output-found')
 
     def test_timeout(self):
-        sourcefile = 'harmless.c'
+        sourcefile = 'test-sources/harmless.c'
         se, driver = self.make_driver()
         se.timeout = 0
         gccinv = GccInvocation(['gcc', sourcefile])
@@ -847,24 +852,24 @@ class CpycheckerTests(ToolTests):
         self.assert_has_custom_field(analysis, 'command-line')
 
     def test_harmless_file(self):
-        analysis = self.invoke('harmless.c')
+        analysis = self.invoke('test-sources/harmless.c')
         #print(analysis)
         self.assertEqual(len(analysis.results), 0)
 
     def test_read_through_null(self):
-        analysis = self.invoke('read-through-null.c')
+        analysis = self.invoke('test-sources/read-through-null.c')
         #print(analysis)
         # cpychecker doesn't detect this
         self.assertEqual(len(analysis.results), 0)
 
     def test_out_of_bounds(self):
-        analysis = self.invoke('out-of-bounds.c')
+        analysis = self.invoke('test-sources/out-of-bounds.c')
         #print(analysis)
         # cpychecker doesn't detect this
         self.assertEqual(len(analysis.results), 0)
 
     def test_cpychecker_demo(self):
-        analysis = self.invoke('cpychecker-demo.c',
+        analysis = self.invoke('test-sources/cpychecker-demo.c',
                                extraargs=['-I/usr/include/python2.7'])
         #print(analysis)
         self.assertEqual(len(analysis.results), 7)
@@ -872,7 +877,8 @@ class CpycheckerTests(ToolTests):
         r0 = analysis.results[0]
         self.assertIsInstance(r0, Issue)
         self.assertEqual(r0.testid, 'mismatching-type-in-format-string')
-        self.assertEqual(r0.location.file.givenpath, 'cpychecker-demo.c')
+        self.assertEqual(r0.location.file.givenpath,
+                         'test-sources/cpychecker-demo.c')
         self.assertEqual(
             r0.message.text,
             ('Mismatching type in call to PyArg_ParseTuple'
@@ -946,18 +952,18 @@ class DriverTests(unittest.TestCase):
         self.assertEqual(driver.returncode, 4)
 
     def test_nonharmless_file(self):
-        driver = self.invoke('harmless.c')
+        driver = self.invoke('test-sources/harmless.c')
         self.assertEqual(driver.ctxt.stdout.getvalue(), '')
         self.assertEqual(driver.ctxt.stderr.getvalue(), '')
         self.assertEqual(driver.returncode, 0)
 
     def test_divide_by_zero(self):
-        driver = self.invoke('divide-by-zero.c', ['-Werror'])
+        driver = self.invoke('test-sources/divide-by-zero.c', ['-Werror'])
         self.assertEqual(driver.ctxt.stdout.getvalue(), '')
         self.assertEqual(
             driver.ctxt.stderr.getvalue(),
-            ("divide-by-zero.c: In function 'divide_by_zero':\n"
-             "divide-by-zero.c:3:12: error: division by zero"
+            ("test-sources/divide-by-zero.c: In function 'divide_by_zero':\n"
+             "test-sources/divide-by-zero.c:3:12: error: division by zero"
              " [-Werror=div-by-zero]\n"
              "   return i / 0;\n"
              "            ^\n"
