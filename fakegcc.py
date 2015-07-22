@@ -504,10 +504,12 @@ class InvokeCpychecker(Tool):
 
         # FIXME: hacked in path:
         plugin_path = '/home/david/coding/gcc-python/gcc-python/cpychecker-firehose-output/'
+        plugin_gcc_c_api_path = '/home/david/coding/gcc-python/gcc-python/cpychecker-firehose-output/gcc-c-api'
         plugin_sys_path = '/home/david/coding/gcc-python/gcc-python/cpychecker-firehose-output/'
         plugin_full_name = os.path.join(plugin_path, 'python.so')
         env = os.environ.copy()
         env['PYTHONPATH'] = plugin_sys_path
+        env['LD_LIBRARY_PATH'] = plugin_gcc_c_api_path
 
         # We would use the regular keyword argument syntax:
         #   outputxmlpath='foo'
