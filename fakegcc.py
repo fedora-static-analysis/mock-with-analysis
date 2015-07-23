@@ -36,6 +36,7 @@ import glob
 import hashlib
 import logging
 import os
+import re
 import StringIO
 import sys
 import tempfile
@@ -126,7 +127,6 @@ class Driver:
         if side_effects is None:
             side_effects =  [InvokeCppcheck(ctxt),
                              InvokeClangAnalyzer(ctxt),
-                             #InvokeCustomGcc(ctxt),
                              InvokeCpychecker(ctxt),
                              InvokeRealGcc(real_driver, ctxt)]
         self.side_effects = side_effects
@@ -338,17 +338,23 @@ class InvokeRealGcc(Tool):
     """
     Tool subclass that invokes a real gcc driver binary
     """
-    def __init__(self, executable, ctxt):
+    def __init__(self, executable, ctxt, extra_args=None, extra_env=None):
         Tool.__init__(self, 'gcc', ctxt)
         self.executable = executable
+        self.extra_args = extra_args
+        self.extra_env = extra_env
 
     def invoke(self, gccinv, sourcefile):
         args = [self.executable] + gccinv.argv[1:]
+        if self.extra_args:
+            args += self.extra_args
 
         # The result parser requires the C locale
         env = os.environ.copy()
         env['LANG'] = 'C'
-
+        if self.extra_env:
+            for key, value in self.extra_env.iteritems():
+                env[key] = value
         return self._run_subprocess(sourcefile, args, env=env)
 
     def handle_output(self, result):
@@ -369,6 +375,36 @@ class InvokeRealGcc(Tool):
         analysis.set_custom_field('gcc-invocation',
                                   ' '.join(result.argv))
         result.set_custom_fields(analysis)
+
+
+class InvokeCustomGcc(InvokeRealGcc):
+    """
+    Tool subclass that invokes a custom build of gcc 6 I have.
+    This is a patched version of gcc that writes out a file
+    to DUMPBASE.custom-dump.txt, containing a series of
+    lines of the form
+       KEY: VALUE
+    """
+    def __init__(self, executable, ctxt, extra_args=None, extra_env=None):
+        InvokeRealGcc.__init__(self, executable, ctxt, extra_args, extra_env)
+        self.name = 'custom-gcc'
+
+    def handle_output(self, result):
+        analysis = InvokeRealGcc.handle_output(self, result)
+        analysis.metadata.generator.name = 'custom-gcc'
+        # FIXME: gcc invocation could have overridden dumpbase
+        dumpbase = os.path.basename(result.sourcefile)
+        dumpfile_path = dumpbase + '.custom-dump.txt'
+        if os.path.exists(dumpfile_path):
+            with open(dumpfile_path) as f:
+                for line in f:
+                    self.log(line)
+                    # Expect lines of the form "KEY: VALUE"
+                    m = re.match('^(.+): (.+)$', line)
+                    self.log(str(m.groups()))
+                    key, value = m.groups()
+                    analysis.set_custom_field(key, value)
+        return analysis
 
 class InvokeCppcheck(Tool):
     """
@@ -455,13 +491,6 @@ class InvokeClangAnalyzer(Tool):
         analysis.set_custom_field('scan-build-invocation',
                                   ' '.join(result.argv))
         result.set_custom_fields(analysis)
-
-class InvokeCustomGcc(Tool):
-    """
-    TODO tool subclass that invokes a custom build of gcc I have
-    """
-    def __init__(self, ctxt):
-        Tool.__init__(self, 'custom-gcc', ctxt)
 
 class InvokeCpychecker(Tool):
     """
@@ -554,7 +583,7 @@ class InvokeCpychecker(Tool):
 
 class ToolTests(unittest.TestCase):
     def make_ctxt(self):
-        return Context()
+        return Context(enable_logging=0)
 
     def make_driver(self):
         ctxt = self.make_ctxt()
@@ -656,7 +685,7 @@ class RealGccTests(ToolTests):
         se.timeout = 0
         gccinv = GccInvocation(['gcc', sourcefile])
         analysis = driver.invoke_tool(se, gccinv, sourcefile)
-        self.assert_metadata(analysis, 'gcc', sourcefile)
+        self.assert_metadata(analysis, se.name, sourcefile)
         self.assertEqual(len(analysis.results), 1)
         r0 = analysis.results[0]
         self.assertIsInstance(r0, Failure)
@@ -681,6 +710,57 @@ class RealGccTests(ToolTests):
         self.assertEqual(r0.location.point.line, 3)
         self.assertEqual(r0.message.text, 'division by zero')
         self.assertEqual(r0.severity, None)
+
+class CustomGccTests(RealGccTests):
+    def make_tool(self, ctxt):
+        # FIXME: hardcoded paths
+        DRIVER_PATH= '/home/david/coding-3/gcc-git-rich-errors/build/gcc/xgcc'
+        EXTRA_ARGS=['-B/home/david/coding-3/gcc-git-rich-errors/build/gcc']
+        EXTRA_ENV={'LD_LIBRARY_PATH':'/home/david/coding/gcc-python/gcc-build-new-cloog/dep-prefix/lib:'}
+
+        # Exercise the new '-Wmisleading-indentation' warning (to see how
+        # often it occurs in a large corpus of code):
+        EXTRA_ARGS += ['-Wmisleading-indentation']
+
+        return InvokeCustomGcc(DRIVER_PATH, ctxt, EXTRA_ARGS, EXTRA_ENV)
+
+    def verify_basic_metadata(self, analysis, sourcefile):
+        # Similar to RealGccTests.verify_basic_metadata
+
+        # Different name:
+        self.assert_metadata(analysis, 'custom-gcc', sourcefile)
+        self.assert_has_custom_field(analysis, 'gcc-invocation')
+        self.assert_has_custom_field(analysis, 'stdout')
+        self.assert_has_custom_field(analysis, 'stderr')
+
+        # Also, look for custom data from my hacked-up gcc:
+        if os.path.exists(sourcefile):
+            self.assert_has_custom_field(analysis,
+                                         'line_table->highest_location')
+            self.assert_has_custom_field(analysis,
+                                         'LINEMAPS_MACRO_LOWEST_LOCATION')
+
+    def test_misleading_indentation(self):
+        """
+        Verify that we're exercising the new -Wmisleading-indentation code
+        and capturing the results
+        """
+        analysis = self.invoke('test-sources/goto-fail.c')
+        self.assertEqual(len(analysis.results), 1)
+        r0 = analysis.results[0]
+        self.assertIsInstance(r0, Issue)
+        self.assertEqual(r0.testid, 'misleading-indentation')
+        self.assertEqual(r0.location.file.givenpath,
+                         'test-sources/goto-fail.c')
+        self.assertEqual(r0.location.function.name, 'test')
+        self.assertEqual(r0.location.point.line, 14)
+        self.assertEqual(r0.message.text,
+                         'statement is indented as if it were guarded by...')
+        # Ideally the other information would have been captured within
+        # the message.
+        # For now, verify that we have it in the stderr:
+        self.assertIn("note: ...this 'if' clause, but it is not",
+                      analysis.customfields['stderr'])
 
 class CppcheckTests(ToolTests):
     def make_tool(self, ctxt):
@@ -1002,12 +1082,24 @@ def main(argv):
 
     # Otherwise, pretend to be gcc
     ctxt = Context(enable_logging=True)
-    real_driver = get_real_executable(argv)
-    driver = Driver(ctxt,
-                    capture_exceptions=True,
-                    real_driver=real_driver)
-    driver.invoke(argv)
-    return driver.returncode
+    try:
+        real_driver = get_real_executable(argv)
+        driver = Driver(ctxt,
+                        capture_exceptions=True,
+                        real_driver=real_driver)
+        if 1:
+            CUSTOM_GCC='/opt/custom-gcc/bin/gcc'
+            EXTRA_ARGS=['-B/opt/custom-gcc']
+            custom_gcc = InvokeCustomGcc(CUSTOM_GCC,
+                                         ctxt,
+                                         EXTRA_ARGS)
+            driver.side_effects.append(custom_gcc)
+            driver.invoke(argv)
+            return driver.returncode
+    except Exception, exc:
+        tb_str = traceback.format_exc()
+        for line in tb_str.splitlines():
+            ctxt.log(line)
 
 if __name__ == '__main__':
     sys.exit(main(sys.argv))

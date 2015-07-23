@@ -129,6 +129,13 @@ def setup_chroot(mockcfg, srpmpath):
                 mockcfg.cmd(['--copyin', module, os.path.join(HACKED_PATH, 'libcpychecker')])
                 mockcfg.cmd(['--copyin', '../../gccutils.py', HACKED_PATH])
 
+        # Copy in a custom build of gcc:
+        # (this has just the C compiler)
+        mockcfg.cmd(['--install',
+                     '/home/david/coding/gcc-python/custom-fedora-gcc/results_custom-gcc/6.0.0/6.0.1e72b426d7aa65f5b2de3506e31dfde81bf41f45.fc22/custom-gcc-6.0.0-6.0.1e72b426d7aa65f5b2de3506e31dfde81bf41f45.fc22.x86_64.rpm',
+                     '/home/david/coding/gcc-python/custom-fedora-gcc/results_custom-gcc/6.0.0/6.0.1e72b426d7aa65f5b2de3506e31dfde81bf41f45.fc22/custom-gcc-cpp-6.0.0-6.0.1e72b426d7aa65f5b2de3506e31dfde81bf41f45.fc22.x86_64.rpm',
+                     '/home/david/coding/gcc-python/custom-fedora-gcc/results_custom-gcc/6.0.0/6.0.1e72b426d7aa65f5b2de3506e31dfde81bf41f45.fc22/libgcc-6.0.0-6.0.1e72b426d7aa65f5b2de3506e31dfde81bf41f45.fc22.x86_64.rpm'])
+
         # Stuff needed by fakegcc.py or firehose:
         mockcfg.cmd(['--install', 'python-subprocess32'])
         mockcfg.cmd(['--install', 'python-six'])
