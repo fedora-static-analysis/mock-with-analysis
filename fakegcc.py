@@ -487,6 +487,14 @@ class InvokeClangAnalyzer(Tool):
             analysis.set_custom_field('plistpath', plistpath)
             return analysis # could there be more than one?
 
+        # Not found?
+        analysis = self._make_failed_analysis(
+            result.sourcefile, result.timer,
+            msgtext='Unable to locate plist file',
+            failureid='plist-not-found')
+        self.set_custom_fields(result, analysis)
+        return analysis
+
     def set_custom_fields(self, result, analysis):
         analysis.set_custom_field('scan-build-invocation',
                                   ' '.join(result.argv))
