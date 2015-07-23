@@ -101,6 +101,22 @@ class MockConfig:
                             captureOut=True)
         return out.splitlines()
 
+def get_custom_gcc_rpms():
+    VERSION = '6.0.0'
+    RELEASE = '6.0.1e72b426d7aa65f5b2de3506e31dfde81bf41f45'
+    DISTTAG = 'fc22'
+    ARCH = 'x86_64'
+    SUFFIX = '%s-%s.%s.%s.rpm' % (VERSION, RELEASE, DISTTAG, ARCH)
+    # FIXME: hardcoded path
+    PATH = ('/home/david/coding/gcc-python/custom-fedora-gcc/results_custom-gcc/%s/%s.%s'
+            % (VERSION, RELEASE, DISTTAG))
+
+    subpackages = ['custom-gcc', 'custom-gcc-cpp', 'libgcc']
+    filenames = ['%s-%s' % (subpackage, SUFFIX)
+                 for subpackage in subpackages]
+    return [os.path.join(PATH, filename)
+            for filename in filenames]
+
 def setup_chroot(mockcfg, srpmpath):
     # The following things take a relatively long time
     # If you're just hacking on fakegcc.py, turn this block off
@@ -111,14 +127,25 @@ def setup_chroot(mockcfg, srpmpath):
             mockcfg.cmd(['--init'])
         mockcfg.cmd(['--installdeps', srpmpath])
 
+        extra_deps = []
+
         # Install the static analyzers of interest:
-        mockcfg.cmd(['--install', 'cppcheck'])
-        mockcfg.cmd(['--install', 'clang-analyzer'])
+        extra_deps += ['cppcheck', 'clang-analyzer']
 
         # Install the pre-built gcc-python-plugin (from the firehose branch):
         if 0:
-            mockcfg.cmd(['--install',
-                         '/home/david/rpmbuild/RPMS/x86_64/gcc-python2-plugin-0.11.firehose-1.fc17.x86_64.rpm'])
+            extra_deps += ['/home/david/rpmbuild/RPMS/x86_64/gcc-python2-plugin-0.11.firehose-1.fc17.x86_64.rpm']
+
+        # Copy in a custom build of gcc:
+        # (this has just the C compiler)
+        extra_deps += get_custom_gcc_rpms()
+
+        # Stuff needed by fakegcc.py or firehose:
+        extra_deps += ['python-subprocess32', 'python-six',
+                       'python-firehose', 'python-gccinvocation']
+
+        # Install all the extra deps in one yum invocation:
+        mockcfg.cmd(['--install'] + extra_deps)
 
         # Copy up latest version of the libcpychecker code from a working copy
         # overriding the copy from the pre-built plugin:
@@ -128,19 +155,6 @@ def setup_chroot(mockcfg, srpmpath):
             for module in glob.glob('../../libcpychecker/*.py'):
                 mockcfg.cmd(['--copyin', module, os.path.join(HACKED_PATH, 'libcpychecker')])
                 mockcfg.cmd(['--copyin', '../../gccutils.py', HACKED_PATH])
-
-        # Copy in a custom build of gcc:
-        # (this has just the C compiler)
-        mockcfg.cmd(['--install',
-                     '/home/david/coding/gcc-python/custom-fedora-gcc/results_custom-gcc/6.0.0/6.0.1e72b426d7aa65f5b2de3506e31dfde81bf41f45.fc22/custom-gcc-6.0.0-6.0.1e72b426d7aa65f5b2de3506e31dfde81bf41f45.fc22.x86_64.rpm',
-                     '/home/david/coding/gcc-python/custom-fedora-gcc/results_custom-gcc/6.0.0/6.0.1e72b426d7aa65f5b2de3506e31dfde81bf41f45.fc22/custom-gcc-cpp-6.0.0-6.0.1e72b426d7aa65f5b2de3506e31dfde81bf41f45.fc22.x86_64.rpm',
-                     '/home/david/coding/gcc-python/custom-fedora-gcc/results_custom-gcc/6.0.0/6.0.1e72b426d7aa65f5b2de3506e31dfde81bf41f45.fc22/libgcc-6.0.0-6.0.1e72b426d7aa65f5b2de3506e31dfde81bf41f45.fc22.x86_64.rpm'])
-
-        # Stuff needed by fakegcc.py or firehose:
-        mockcfg.cmd(['--install', 'python-subprocess32'])
-        mockcfg.cmd(['--install', 'python-six'])
-        mockcfg.cmd(['--install', 'python-firehose'])
-        mockcfg.cmd(['--install', 'python-gccinvocation'])
 
         # Override the real gcc/g++ with our fake ones, which add the necessary flags
         # and then invokes the real one:
