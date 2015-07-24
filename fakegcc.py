@@ -144,11 +144,23 @@ class Driver:
 
         gccinv = GccInvocation(argv)
 
+        self.log('  gccinv.sources: %r' % gccinv.sources)
+
         # Run the side effects on each source file:
         for sourcefile in gccinv.sources:
+            self.log('    sourcefile: %r' % sourcefile)
             if sourcefile.endswith('.c'): # FIXME: other extensions?
+                single_source_gccinv = gccinv.restrict_to_one_source(sourcefile)
+
+                # Avoid linker errors due to splitting up the build into
+                # multiple gcc invocations:
+                single_source_gccinv.argv += ['-c']
+
+                self.log('    single_source_gccinv: %r' % single_source_gccinv)
                 for side_effect in self.side_effects:
-                    analysis = self.invoke_tool(side_effect, gccinv, sourcefile)
+                    analysis = self.invoke_tool(side_effect,
+                                                single_source_gccinv,
+                                                sourcefile)
                     #analysis.set_custom_field('gcc-invocation', ' '.join(argv))
                     self.write_analysis_as_xml(analysis)
 
@@ -174,8 +186,9 @@ class Driver:
         Call "invoke" on the side-effect, handling exceptions.
         Return an Analysis instance.
         """
+        assert len(gccinv.sources) == 1
         try:
-            self.log('about to invoke: %s' % tool.name)
+            self.log('about to invoke: %s with %r' % (tool.name, gccinv))
             analysis = tool.invoke(gccinv, sourcefile)
         except TimeoutExpired:
             analysis = (
@@ -309,10 +322,9 @@ class Tool:
         Support for running the bulk of the side effect in a subprocess,
         with timeout support.
         """
+        self.log('%s: _run_subprocess(%r, %r)' % (self.name, sourcefile, argv))
         if 0:
-            log('%s: _run_subprocess(%r, %r)' % (self.name, sourcefile, argv))
-        if 0:
-            log('env: %s' % env)
+            self.log('env: %s' % env)
         p = Popen(argv,
                   stdout=PIPE, stderr=PIPE, env=env)
         try:
@@ -343,11 +355,16 @@ class InvokeRealGcc(Tool):
         self.executable = executable
         self.extra_args = extra_args
         self.extra_env = extra_env
+        # We are only ever invoked with individual input files.
+        # Override any -o, to ensure we don't interfere with the output
+        # from the real compiler:
+        self.output_file = tempfile.NamedTemporaryFile()
 
     def invoke(self, gccinv, sourcefile):
         args = [self.executable] + gccinv.argv[1:]
         if self.extra_args:
             args += self.extra_args
+        args += ['-o', self.output_file.name]
 
         # The result parser requires the C locale
         env = os.environ.copy()
@@ -392,10 +409,11 @@ class InvokeCustomGcc(InvokeRealGcc):
     def handle_output(self, result):
         analysis = InvokeRealGcc.handle_output(self, result)
         analysis.metadata.generator.name = 'custom-gcc'
-        # FIXME: gcc invocation could have overridden dumpbase
-        dumpbase = os.path.basename(result.sourcefile)
+        dumpbase = os.path.join(os.path.dirname(self.output_file.name),
+                                os.path.basename(result.sourcefile))
         dumpfile_path = dumpbase + '.custom-dump.txt'
         if os.path.exists(dumpfile_path):
+            self.log('found custom dumpfile: %s' % dumpfile_path)
             with open(dumpfile_path) as f:
                 for line in f:
                     self.log(line)
@@ -404,6 +422,8 @@ class InvokeCustomGcc(InvokeRealGcc):
                     self.log(str(m.groups()))
                     key, value = m.groups()
                     analysis.set_custom_field(key, value)
+        else:
+            self.log('could not find custom dumpfile: %s' % dumpfile_path)
         return analysis
 
 class InvokeCppcheck(Tool):
@@ -513,15 +533,6 @@ class InvokeCpychecker(Tool):
     def invoke(self, gccinv, sourcefile):
         # Invoke the plugin, but for robustness, do it in an entirely
         # separate gcc invocation
-
-        # TODO:
-        # strip away -o; add -S or -c?
-        # or set -o to a dummy location?
-        # latter seems more robust
-        #gccinv = gccinv.restrict_source(sourcefile)
-
-        assert len(gccinv.sources) == 1 # for now
-
         argv = gccinv.argv[:]
 
         self.outputxmlpath = '%s.firehose.xml' % sourcefile
@@ -1075,6 +1086,38 @@ class DriverTests(unittest.TestCase):
         self.assertIn(' (GCC) ', driver.ctxt.stdout.getvalue())
         self.assertEqual(driver.ctxt.stderr.getvalue(), '')
         self.assertEqual(driver.returncode, 0)
+
+    def test_multiple_source_files(self):
+        """
+        Verify invocations that cover multiple source files, linking
+        to an executable.
+        """
+        driver = self.make_driver()
+        args = ['gcc',
+                'test-sources/multiple-1.c',
+                'test-sources/multiple-2.c',
+                '-o', 'multiple.exe']
+        r = driver.invoke(args)
+        self.assertEqual(driver.ctxt.stderr.getvalue(), '')
+        self.assertEqual(driver.returncode, 0)
+
+        # Verify that it wrote out "firehose" XML files to 'outputdir':
+        analyses = []
+        for xmlpath in glob.glob(os.path.join(driver.outputdir, '*.xml')):
+            with open(xmlpath) as f:
+                analysis = Analysis.from_xml(f)
+            analyses.append(analysis)
+            # Verify that none of the side-effects failed (e.g. with
+            # linker errors):
+            self.assertEqual(analysis.customfields['returncode'], 0)
+            os.unlink(xmlpath)
+        self.assertEqual(len(analyses), 8)
+
+        # We should have a ./multiple.exe that we can run
+        self.assertTrue(os.path.exists('./multiple.exe'))
+        os.unlink('./multiple.exe')
+
+        os.rmdir(driver.outputdir)
 
 ############################################################################
 # Entrypoint
